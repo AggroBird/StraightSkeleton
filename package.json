@@ -1,0 +1,18 @@
+{
+	"name": "com.aggrobird.straightskeleton",
+	"displayName": "Straight Skeleton",
+	"version": "1.0.0",
+	"unity": "2020.3",
+	"keywords": ["Straight", "Skeleton"],
+	"category": "Utility",
+	"description": "Lightweight Straight Skeleton generator",
+	"dependencies": {
+		"com.unity.mathematics": "1.2.6"
+	},
+	"author":
+	{
+		"name": "AggroBirdGK",
+		"email": "contact@aggrobird.com",
+		"url": "https://www.aggrobird.com"
+	}
+}

@@ -103,55 +103,15 @@ namespace AggroBird.StraightSkeleton
             Right = 2,
         }
 
-        private sealed class Polygon
+        private struct PolygonVertex
         {
-            public Polygon(int index)
-            {
-                this.index = index;
-                lhs = null;
-                rhs = null;
-                vertexCount = 0;
-            }
-
-            public readonly int index;
-
-            // Bottom left starting vertex
-            public PolygonVertex lhs;
-            // Bottom right starting vertex
-            public PolygonVertex rhs;
-            // Total amount of vertices within this polygon
-            public int vertexCount;
-
-
-            public override string ToString()
-            {
-                return $"polygon #{index} ({vertexCount} vertices)";
-            }
-        }
-
-        private sealed class PolygonVertex
-        {
-            public PolygonVertex(float2 position, int passIndex, Polygon polygon, PolygonSide side = PolygonSide.Unknown)
+            public PolygonVertex(float2 position, int passIndex = 0)
             {
                 this.position = position;
                 this.passIndex = passIndex;
 
-                this.polygon = polygon;
-                index = polygon.vertexCount++ | ((int)side << 30);
-            }
-
-            public Polygon polygon;
-            private int index;
-
-            public int Index
-            {
-                get => index & 0x3FFFFFFF;
-                set => index = value | (index & ~0x3FFFFFFF);
-            }
-            public PolygonSide Side
-            {
-                get => (PolygonSide)((uint)index >> 30);
-                set => index = Index | ((int)value << 30);
+                prevPolyVert = -1;
+                nextPolyVert = -1;
             }
 
             // The index of the pass this vertex was inserted
@@ -161,41 +121,8 @@ namespace AggroBird.StraightSkeleton
             public float2 position;
 
             // Neighbours in the polygon linked list
-            public PolygonVertex prevPolyVert;
-            public PolygonVertex nextPolyVert;
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void Link(PolygonVertex prev, PolygonVertex next)
-            {
-                LinkPrev(prev);
-                LinkNext(next);
-            }
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void LinkPrev(PolygonVertex prev)
-            {
-                prevPolyVert = prev;
-                prev.nextPolyVert = this;
-            }
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void LinkNext(PolygonVertex next)
-            {
-                nextPolyVert = next;
-                next.prevPolyVert = this;
-            }
-
-
-            public override string ToString()
-            {
-                switch (Side)
-                {
-                    case PolygonSide.Left:
-                        return $"polygon #{polygon.index} vertex #{Index} (left side)";
-                    case PolygonSide.Right:
-                        return $"polygon #{polygon.index} vertex #{Index} (right side)";
-                    default:
-                        return $"polygon #{polygon.index} vertex #{Index}";
-                }
-            }
+            public int prevPolyVert;
+            public int nextPolyVert;
         }
 
         private sealed class ChainVertex
@@ -234,8 +161,8 @@ namespace AggroBird.StraightSkeleton
             public ChainVertex nextChainVert;
 
             // Neighbouring polygons on this axis
-            public PolygonVertex lhsPolyVert;
-            public PolygonVertex rhsPolyVert;
+            public int lhsPolyVert;
+            public int rhsPolyVert;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void Link(ChainVertex prev, ChainVertex next)
@@ -472,10 +399,45 @@ namespace AggroBird.StraightSkeleton
             }
         }
 
+        private static void EnsureCapacity<T>(ref T[] buffer, int size, bool copyData)
+        {
+            int currentCapacity = buffer.Length;
+            if (size > currentCapacity)
+            {
+                int newCapacity = currentCapacity;
+            IncreaseCapacity:
+                newCapacity <<= 1;
+                if (newCapacity <= 0)
+                {
+                    throw new StraightSkeletonException("Buffer allocation caused an overflow");
+                }
+                if (size > newCapacity)
+                {
+                    goto IncreaseCapacity;
+                }
+
+                T[] newBuffer = new T[newCapacity];
+                if (copyData)
+                {
+                    Array.Copy(buffer, newBuffer, currentCapacity);
+                }
+                buffer = newBuffer;
+            }
+        }
+
         private int uniqueVertexCount = 0;
         private readonly List<Chain> activeChains = new List<Chain>();
         private readonly List<Chain> newChains = new List<Chain>();
-        private readonly List<Polygon> polygons = new List<Polygon>();
+
+        private PolygonVertex[] polygonVertices = new PolygonVertex[32];
+        private int polygonVertexCount = 0;
+        private int AddPolygonVertex(PolygonVertex polygonVertex)
+        {
+            int idx = polygonVertexCount;
+            EnsureCapacity(ref polygonVertices, polygonVertexCount + 1, true);
+            polygonVertices[polygonVertexCount++] = polygonVertex;
+            return idx;
+        }
 
         private readonly List<ChainVertex> incidentVertices = new List<ChainVertex>();
         private readonly List<ChainVertex> unresolvedChains = new List<ChainVertex>();
@@ -495,21 +457,24 @@ namespace AggroBird.StraightSkeleton
             Chain firstChain = new Chain(points);
             int pointCount = uniqueVertexCount = points.Count;
 
-            polygons.Clear();
-            for (int i = 0; i < pointCount; i++)
+            // Create initial starting polygons
+            int initialPolygonVertexCount = pointCount * 2;
+            EnsureCapacity(ref polygonVertices, initialPolygonVertexCount, false);
+            for (int i = 0, idx = 0; i < pointCount; i++)
             {
                 ChainVertex next = firstChain[i].nextChainVert;
                 ChainVertex prev = next.prevChainVert;
-                Polygon polygon = new Polygon(i);
-                polygon.vertexCount = 0;
-                polygon.lhs = new PolygonVertex(next.position, 0, polygon, PolygonSide.Left);
-                polygon.rhs = new PolygonVertex(prev.position, 0, polygon, PolygonSide.Right);
-                next.lhsPolyVert = polygon.lhs;
-                prev.rhsPolyVert = polygon.rhs;
-                polygon.lhs.prevPolyVert = polygon.rhs;
-                polygon.rhs.nextPolyVert = polygon.lhs;
-                polygons.Add(polygon);
+                int lhsIdx = idx++, rhsIdx = idx++;
+                PolygonVertex lhs = new PolygonVertex(next.position);
+                PolygonVertex rhs = new PolygonVertex(prev.position);
+                lhs.prevPolyVert = rhsIdx;
+                rhs.nextPolyVert = lhsIdx;
+                next.lhsPolyVert = lhsIdx;
+                prev.rhsPolyVert = rhsIdx;
+                polygonVertices[lhsIdx] = lhs;
+                polygonVertices[rhsIdx] = rhs;
             }
+            polygonVertexCount = initialPolygonVertexCount;
 
 #if WITH_DEBUG
             foreach (var vert in firstChain)
@@ -567,55 +532,56 @@ namespace AggroBird.StraightSkeleton
                 verts.Clear();
                 bisectors.Clear();
 
-                Polygon polygon = polygons[i];
-                PolygonVertex first = polygon.lhs;
-                PolygonVertex current = first;
+                int first = i * 2;
+                int index = first;
                 int iter = 0;
                 bool hasInfiniteLoop = false;
 
                 // Try and find the initial vertex (in case of unconnected loops)
                 do
                 {
-                    if (iter++ > polygon.vertexCount)
+                    if (iter++ > pointCount * 100)
                     {
-                        Debug.LogError($"polygon #{polygon.index} contains an infinite loop");
+                        Debug.LogError($"polygon #{i} contains an infinite loop");
                         hasInfiniteLoop = true;
                         isValid = false;
                         break;
                     }
-                    if (current.prevPolyVert == null)
+                    ref PolygonVertex vertex = ref polygonVertices[index];
+                    if (vertex.prevPolyVert == -1)
                     {
                         break;
                     }
-                    current = current.prevPolyVert;
+                    index = vertex.prevPolyVert;
                 }
-                while (!current.Equals(first));
-                first = current;
+                while (!index.Equals(first));
+                first = index;
 
                 // Fetch all vertices
                 iter = 0;
                 do
                 {
-                    if (iter++ > polygon.vertexCount)
+                    if (iter++ > pointCount * 100)
                     {
                         if (!hasInfiniteLoop)
                         {
-                            Debug.LogError($"polygon #{polygon.index} contains an infinite loop");
+                            Debug.LogError($"polygon #{i} contains an infinite loop");
                             hasInfiniteLoop = true;
                         }
                         isValid = false;
                         break;
                     }
-                    verts.Add(current.position);
-                    if (current.nextPolyVert == null)
+                    ref PolygonVertex vertex = ref polygonVertices[index];
+                    verts.Add(vertex.position);
+                    if (vertex.nextPolyVert == -1)
                     {
-                        Debug.LogError($"polygon #{polygon.index} contains null connections");
+                        Debug.LogError($"polygon #{i} contains null connections");
                         isValid = false;
                         break;
                     }
-                    current = current.nextPolyVert;
+                    index = vertex.nextPolyVert;
                 }
-                while (!current.Equals(first));
+                while (index != first);
 
                 if (verts.Count >= 3)
                 {
@@ -656,14 +622,15 @@ namespace AggroBird.StraightSkeleton
             for (int i = 0; i < pointCount; i++)
             {
                 List<float2> buffer = output.GetBuffer();
-                PolygonVertex first = polygons[i].lhs;
-                PolygonVertex vertex = first;
+                int first = i * 2;
+                int index = first;
                 do
                 {
+                    ref PolygonVertex vertex = ref polygonVertices[index];
                     buffer.Add(vertex.position);
-                    vertex = vertex.nextPolyVert;
+                    index = vertex.nextPolyVert;
                 }
-                while (!vertex.Equals(first));
+                while (index != first);
             }
         }
         public StraightSkeleton Generate(IReadOnlyList<float2> points)
@@ -714,8 +681,7 @@ namespace AggroBird.StraightSkeleton
                             ChainVertex prev = bestResult.segment, next = prev.nextChainVert;
                             ChainVertex insert = new ChainVertex(bestResult.point, passIndex, uniqueVertexCount++);
                             // Create an empty polygon vertex at the split position
-                            PolygonVertex polygonVertex = new PolygonVertex(bestResult.point, passIndex, prev.rhsPolyVert.polygon);
-                            insert.lhsPolyVert = insert.rhsPolyVert = polygonVertex;
+                            insert.lhsPolyVert = insert.rhsPolyVert = AddPolygonVertex(new PolygonVertex(bestResult.point, passIndex));
                             insert.Link(prev, next);
                             insert.RecalculateNeighbours();
                         }
@@ -781,12 +747,12 @@ namespace AggroBird.StraightSkeleton
                                 {
                                     ChainVertex insert = new ChainVertex(vertex.position, passIndex, uniqueVertexCount++);
 
-                                    PolygonVertex nextPolygon = prevIncident.rhsPolyVert;
-                                    if (nextPolygon.passIndex != passIndex)
+                                    int nextPolygon = prevIncident.rhsPolyVert;
+                                    if (polygonVertices[nextPolygon].passIndex != passIndex)
                                     {
                                         // Insert a polygon vertex on the right side of the left polygon
-                                        PolygonVertex lhs = new PolygonVertex(vertex.position, passIndex, nextPolygon.polygon);
-                                        lhs.LinkNext(nextPolygon);
+                                        int lhs = AddPolygonVertex(new PolygonVertex(vertex.position, passIndex));
+                                        LinkPolygonVerts(lhs, nextPolygon);
                                         insert.rhsPolyVert = lhs;
                                     }
                                     else
@@ -795,12 +761,12 @@ namespace AggroBird.StraightSkeleton
                                         insert.rhsPolyVert = nextPolygon;
                                     }
 
-                                    PolygonVertex prevPolygon = nextIncident.lhsPolyVert;
-                                    if (prevPolygon.passIndex != passIndex)
+                                    int prevPolygon = nextIncident.lhsPolyVert;
+                                    if (polygonVertices[prevPolygon].passIndex != passIndex)
                                     {
                                         // Insert a polygon vertex on the left side of the right polygon
-                                        PolygonVertex rhs = new PolygonVertex(vertex.position, passIndex, prevPolygon.polygon);
-                                        rhs.LinkPrev(prevPolygon);
+                                        int rhs = AddPolygonVertex(new PolygonVertex(vertex.position, passIndex));
+                                        LinkPolygonVerts(prevPolygon, rhs);
                                         insert.lhsPolyVert = rhs;
                                     }
                                     else
@@ -816,8 +782,8 @@ namespace AggroBird.StraightSkeleton
                                 else
                                 {
                                     // Close into a triangle
-                                    PolygonVertex end = new PolygonVertex(vertex.position, passIndex, prevIncident.rhsPolyVert.polygon);
-                                    end.Link(nextIncident.lhsPolyVert, prevIncident.rhsPolyVert);
+                                    int end = AddPolygonVertex(new PolygonVertex(vertex.position, passIndex));
+                                    LinkPolygonVerts(nextIncident.lhsPolyVert, end, prevIncident.rhsPolyVert);
                                 }
                             }
 
@@ -854,19 +820,38 @@ namespace AggroBird.StraightSkeleton
                 else if (newChain.Count == 2)
                 {
                     // If we have only two vertices we can collapse the segment and close the polygons
-                    ChainVertex a = newChain[0], b = newChain[1];
-                    if (a.lhsPolyVert.nextPolyVert == null && b.rhsPolyVert.prevPolyVert == null)
+                    ChainVertex prev = newChain[0], next = newChain[1];
+                    ref PolygonVertex prevLhs = ref polygonVertices[prev.lhsPolyVert];
+                    ref PolygonVertex nextLhs = ref polygonVertices[next.lhsPolyVert];
+                    ref PolygonVertex prevRhs = ref polygonVertices[prev.rhsPolyVert];
+                    ref PolygonVertex nextRhs = ref polygonVertices[next.rhsPolyVert];
+                    if (prevLhs.nextPolyVert == -1 && nextRhs.prevPolyVert == -1)
                     {
-                        a.lhsPolyVert.LinkNext(b.rhsPolyVert);
+                        prevLhs.nextPolyVert = next.rhsPolyVert;
+                        nextRhs.prevPolyVert = prev.lhsPolyVert;
                     }
-                    if (a.rhsPolyVert.prevPolyVert == null && b.lhsPolyVert.nextPolyVert == null)
+                    if (prevRhs.prevPolyVert == -1 && nextLhs.nextPolyVert == -1)
                     {
-                        a.rhsPolyVert.LinkPrev(b.lhsPolyVert);
+                        prevRhs.prevPolyVert = next.lhsPolyVert;
+                        nextLhs.nextPolyVert = prev.rhsPolyVert;
                     }
                 }
             }
 
             chain.Clear();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void LinkPolygonVerts(int prev, int vert, int next)
+        {
+            LinkPolygonVerts(prev, vert);
+            LinkPolygonVerts(vert, next);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void LinkPolygonVerts(int prev, int next)
+        {
+            polygonVertices[prev].nextPolyVert = next;
+            polygonVertices[next].prevPolyVert = prev;
         }
 
 

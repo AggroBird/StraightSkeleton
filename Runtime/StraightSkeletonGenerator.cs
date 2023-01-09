@@ -66,11 +66,11 @@ namespace AggroBird.StraightSkeleton
 #if WITH_DEBUG
         private readonly List<(float2, float2, Color)> debugOutput = new List<(float2, float2, Color)>();
         public IReadOnlyList<(float2 from, float2 to, Color color)> DebugOutput => debugOutput;
-        internal void AddDebugLine(float2 from, float2 to, Color color)
+        internal void DrawDebugLine(float2 from, float2 to, Color color)
         {
             debugOutput.Add((from, to, color));
         }
-        internal void AddDebugSquare(float2 position, float size, Color color)
+        internal void DrawDebugSquare(float2 position, float size, Color color)
         {
             float2 p0 = position - size * 0.5f;
             float2 p1 = p0 + new float2(0, size);
@@ -372,7 +372,7 @@ namespace AggroBird.StraightSkeleton
             for (int i = 0; i < chainVertexCount; i++)
             {
                 int j = (i + 1) % chainVertexCount;
-                output.AddDebugLine(chainVertices[i].position, chainVertices[j].position, Color.white);
+                output.DrawDebugLine(chainVertices[i].position, chainVertices[j].position, Color.white);
             }
 #endif
 
@@ -413,7 +413,7 @@ namespace AggroBird.StraightSkeleton
                     {
                         ref ChainVertex vert = ref chainVertices[vertIdx];
                         ref ChainVertex next = ref chainVertices[vert.nextChainVert];
-                        output.AddDebugLine(vert.position, next.position, Color.grey);
+                        output.DrawDebugLine(vert.position, next.position, Color.grey);
                         vertIdx = vert.nextChainVert;
                     }
                     while (vertIdx != chain);
@@ -504,7 +504,7 @@ namespace AggroBird.StraightSkeleton
                     for (int j = 0; j < verts.Count; j++)
                     {
                         int k = (j + 1) % verts.Count;
-                        output.AddDebugLine(verts[j] + bisectors[j], verts[k] + bisectors[k], debugColor);
+                        output.DrawDebugLine(verts[j] + bisectors[j], verts[k] + bisectors[k], debugColor);
                     }
                 }
                 else

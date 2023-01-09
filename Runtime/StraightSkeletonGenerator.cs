@@ -637,6 +637,7 @@ namespace AggroBird.StraightSkeleton
                 ref ChainVertex prev = ref chainVertices[vertIdx];
                 ref ChainVertex next = ref chainVertices[prev.nextChainVert];
                 prev.RecalculateSegment(next.position);
+                next.RecalculateBisector(prev.direction);
                 vertIdx = prev.nextChainVert;
             }
             while (vertIdx != chain);
@@ -645,9 +646,8 @@ namespace AggroBird.StraightSkeleton
         // Check for any intersections (results in one or more new chains)
         private void ProcessIntersectionEvents(int chain, int pass)
         {
-            // This phase scans over all the vertices and checks for overlapping (incident) vertices.
-            // In the case of a split event, it will emit a new vertex parallel to the segment so that
-            // it can be picked up later by the split stage.
+            // This phase scans over all the vertices and checks for split events.
+            // In the case of a split event, it will emit a new vertex parallel to the segment.
             int vertIdx = chain;
             do
             {
@@ -664,7 +664,7 @@ namespace AggroBird.StraightSkeleton
                         ref ChainVertex seg = ref chainVertices[segIdx];
                         if (segIdx != vertIdx && seg.nextChainVert != vertIdx)
                         {
-                            AppendIntersect(ref vert, ref seg, ref chainVertices[seg.nextChainVert], LowPrecisionEpsilon, ref bestResult);
+                            TraceSegment(ref vert, ref seg, ref chainVertices[seg.nextChainVert], LowPrecisionEpsilon, ref bestResult);
                         }
 
                         segIdx = seg.nextChainVert;
@@ -673,21 +673,16 @@ namespace AggroBird.StraightSkeleton
 
                     if (bestResult)
                     {
-                        // Snap vertex to intersect location
+                        // Snap to intersect location
                         vert.position = bestResult.point;
-                        RecalculateSegments(ref vert);
-
-                        if (!bestResult.IsIncident)
-                        {
-                            // Insert new vertex on segment
-                            ref ChainVertex insert = ref AddChainVertex(new ChainVertex { position = bestResult.point, depth = vert.depth, pass = pass });
-                            ref ChainVertex segBeg = ref chainVertices[bestResult.segment];
-                            ref ChainVertex segEnd = ref chainVertices[segBeg.nextChainVert];
-                            insert.Link(ref segBeg, ref segEnd);
-                            RecalculateSegments(ref insert);
-                            // Create an empty polygon vertex at the split position
-                            insert.lhsPolyVert = insert.rhsPolyVert = AddPolygonVertex(new PolygonVertex(bestResult.point, segBeg.depth, pass)).index;
-                        }
+                        // Insert new vertex on segment
+                        ref ChainVertex insert = ref AddChainVertex(new ChainVertex { position = bestResult.point, depth = vert.depth, pass = pass });
+                        ref ChainVertex segBeg = ref chainVertices[bestResult.segment];
+                        ref ChainVertex segEnd = ref chainVertices[segBeg.nextChainVert];
+                        insert.Link(ref segBeg, ref segEnd);
+                        RecalculateSegments(ref insert);
+                        // Create an empty polygon vertex at the split position
+                        insert.lhsPolyVert = insert.rhsPolyVert = AddPolygonVertex(new PolygonVertex(bestResult.point, segBeg.depth, pass)).index;
                     }
                 }
 
@@ -909,60 +904,49 @@ namespace AggroBird.StraightSkeleton
             public float distanceSqr;
             public int segment;
 
-            public bool IsIncident => segment == -1;
-
             public static implicit operator bool(IntersectResult intersectResult)
             {
-                return intersectResult.distanceSqr != float.PositiveInfinity;
+                return intersectResult.segment != -1;
             }
         }
 
         // Calculate the intersection of a vertex on a segment, and if the distance is closer than the previous, update the result.
-        // This function prefers incident results, to reduce the amount of tiny segment intersections.
-        private void AppendIntersect(ref ChainVertex vert, ref ChainVertex segBeg, ref ChainVertex segEnd, float accuracy, ref IntersectResult result)
+        private void TraceSegment(ref ChainVertex vert, ref ChainVertex segBeg, ref ChainVertex segEnd, float accuracy, ref IntersectResult result)
         {
             float accuracySqr = accuracy * accuracy;
 
-            // See if we are anywhere near the segment origin
+            // See if we are not near the segment origin
             float dist = math.distancesq(vert.position, segBeg.position);
-            if (dist <= accuracySqr && dist < result.distanceSqr)
+            if (dist > accuracySqr)
             {
-                result.point = segBeg.position;
-                result.distanceSqr = dist;
-                result.segment = -1;
-            }
-
-            // See if we are anywhere near the segment end
-            dist = math.distancesq(vert.position, segEnd.position);
-            if (dist <= accuracySqr && dist < result.distanceSqr)
-            {
-                result.point = segEnd.position;
-                result.distanceSqr = dist;
-                result.segment = -1;
-            }
-
-            // Project the point onto the segment (if we are currently not incident)
-            if (segBeg.length > 0 && (!result || !result.IsIncident))
-            {
-                // Project on the segment along the length
-                float2 relative = vert.position - segBeg.position;
-                float project = math.dot(relative, segBeg.direction);
-                if (project >= 0 && project <= segBeg.length)
+                // See if we are not near the segment end
+                dist = math.distancesq(vert.position, segEnd.position);
+                if (dist > accuracySqr)
                 {
-                    // Project on the segment along the width (with an error margin)
-                    float2 perp = new float2(segBeg.direction.y, -segBeg.direction.x);
-                    float dot = math.dot(perp, relative);
-                    if (math.abs(dot) <= accuracy)
+                    // Project the point onto the segment (if we are currently not incident)
+                    if (segBeg.length > 0)
                     {
-                        // The result point will be projected along the segment to ensure 
-                        // the result intersection point will not warp the segment
-                        float2 point = segBeg.position + segBeg.direction * project;
-                        dist = math.distancesq(vert.position, point);
-                        if (dist < result.distanceSqr)
+                        // Project on the segment along the length
+                        float2 relative = vert.position - segBeg.position;
+                        float project = math.dot(relative, segBeg.direction);
+                        if (project >= 0 && project <= segBeg.length)
                         {
-                            result.point = point;
-                            result.distanceSqr = dist;
-                            result.segment = segBeg.index;
+                            // Project on the segment along the width (with an error margin)
+                            float2 perp = new float2(segBeg.direction.y, -segBeg.direction.x);
+                            float dot = math.dot(perp, relative);
+                            if (math.abs(dot) <= accuracy)
+                            {
+                                // The result point will be projected along the segment to ensure 
+                                // the result intersection point will not warp the segment
+                                float2 point = segBeg.position + segBeg.direction * project;
+                                dist = math.distancesq(vert.position, point);
+                                if (dist < result.distanceSqr)
+                                {
+                                    result.point = point;
+                                    result.distanceSqr = dist;
+                                    result.segment = segBeg.index;
+                                }
+                            }
                         }
                     }
                 }

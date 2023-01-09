@@ -412,7 +412,7 @@ namespace AggroBird.StraightSkeleton
                 // Try and find the initial vertex (in case of unconnected loops)
                 do
                 {
-                    if (iter++ > pointCount * 100)
+                    if (iter++ > pointCount)
                     {
                         Debug.LogError($"polygon #{i} contains an infinite loop");
                         hasInfiniteLoop = true;
@@ -433,7 +433,7 @@ namespace AggroBird.StraightSkeleton
                 iter = 0;
                 do
                 {
-                    if (iter++ > pointCount * 100)
+                    if (iter++ > pointCount)
                     {
                         if (!hasInfiniteLoop)
                         {

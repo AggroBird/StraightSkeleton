@@ -18,6 +18,8 @@ namespace AggroBird.StraightSkeleton
         [Space]
         public bool generateOnValidate = false;
 
+        public float maxHeight = 999;
+
 
         private readonly StraightSkeletonGenerator generator = new StraightSkeletonGenerator();
         private readonly StraightSkeleton straightSkeleton = new StraightSkeleton();
@@ -60,7 +62,7 @@ namespace AggroBird.StraightSkeleton
                 // Generate straight skeleton
                 try
                 {
-                    generator.Generate(input, straightSkeleton);
+                    generator.Generate(input, straightSkeleton, maxHeight);
                 }
                 catch (Exception ex)
                 {
@@ -91,12 +93,11 @@ namespace AggroBird.StraightSkeleton
             // Generate walls
             if (wallHeight > 0)
             {
-                int offset = 0;
-                foreach (var subPolygon in straightSkeleton)
+                for (int i = 0, k = 0; i < polygon.Length; i++, k += 4)
                 {
-                    int vertCount = subPolygon.Count;
-                    float3 p0 = subPolygon[vertCount - 1];
-                    float3 p1 = subPolygon[0];
+                    int j = (i + 1) % polygon.Length;
+                    Vector2 p0 = polygon[i];
+                    Vector2 p1 = polygon[j];
                     float size = math.length(p1 - p0);
 
                     vertices.Add(new Vector3(p0.x, 0, p0.y));
@@ -111,21 +112,22 @@ namespace AggroBird.StraightSkeleton
                     colors.Add(wallColor);
                     colors.Add(wallColor);
                     colors.Add(wallColor);
-                    triangles.Add(offset + 0);
-                    triangles.Add(offset + 2);
-                    triangles.Add(offset + 1);
-                    triangles.Add(offset + 3);
-                    triangles.Add(offset + 2);
-                    triangles.Add(offset + 0);
-                    offset += 4;
+                    triangles.Add(k + 0);
+                    triangles.Add(k + 2);
+                    triangles.Add(k + 1);
+                    triangles.Add(k + 3);
+                    triangles.Add(k + 2);
+                    triangles.Add(k + 0);
                 }
             }
 
             // Generate roof
             float slope = math.tan(math.radians(roofPitch));
             float v = 1.0f / math.cos(math.radians(roofPitch));
-            foreach (var subPolygon in straightSkeleton)
+            for (int idx = 0; idx < straightSkeleton.Count; idx++)
             {
+                var subPolygon = straightSkeleton[idx];
+                float texcoordScale = idx < straightSkeleton.CenterPolygonCount ? 1 : v;
                 int vertCount = subPolygon.Count;
                 if (vertCount < 3) continue;
 
@@ -146,7 +148,7 @@ namespace AggroBird.StraightSkeleton
                     float2 relative = pos - origin;
                     triangulation[i] = new TriangulationNode(offset + i, pos, prev, next);
                     vertices.Add(new Vector3(pos.x, vert.z * slope + wallHeight, pos.y));
-                    texcoords.Add(new Vector2(math.dot(relative, dir), math.dot(relative, perp) * v));
+                    texcoords.Add(new Vector2(math.dot(relative, dir), math.dot(relative, perp) * texcoordScale));
                     colors.Add(roofColor);
                 }
 

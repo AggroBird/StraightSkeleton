@@ -22,7 +22,11 @@ namespace AggroBird.StraightSkeleton
     {
         private readonly List<List<float3>> polygons = new List<List<float3>>();
 
+        // Total amount of polygons
         public int Count { get; private set; }
+        // Center polygons will occupy the first slots in the array
+        public int CenterPolygonCount { get; internal set; }
+
         public IReadOnlyList<float3> this[int index] => polygons[index];
 
         public IEnumerator<IReadOnlyList<float3>> GetEnumerator()
@@ -40,6 +44,7 @@ namespace AggroBird.StraightSkeleton
         public void Clear()
         {
             Count = 0;
+            CenterPolygonCount = 0;
 
 #if WITH_DEBUG
             debugOutput.Clear();
@@ -279,6 +284,7 @@ namespace AggroBird.StraightSkeleton
             }
         }
 
+        // Chain vertices
         private ChainVertex[] chainVertices = new ChainVertex[16];
         private int chainVertexCount = 0;
         private ref ChainVertex AddChainVertex(ChainVertex chainVertex)
@@ -290,9 +296,7 @@ namespace AggroBird.StraightSkeleton
             return ref result;
         }
 
-        private readonly List<int> activeChains = new List<int>();
-        private readonly List<int> newChains = new List<int>();
-
+        // Polygon vertices
         private PolygonVertex[] polygonVertices = new PolygonVertex[32];
         private int polygonVertexCount = 0;
         private ref PolygonVertex AddPolygonVertex(PolygonVertex polygonVertex)
@@ -304,13 +308,19 @@ namespace AggroBird.StraightSkeleton
             return ref result;
         }
 
+        // Buffers used for keeping track of chains
+        private readonly List<int> activeChains = new List<int>();
+        private readonly List<int> splitChains = new List<int>();
+        private readonly List<int> abortedChains = new List<int>();
+
+        // Buffers used for intersection events
         private readonly List<int> incidentVertices = new List<int>();
         private readonly List<int> unresolvedChains = new List<int>();
         private readonly List<int> resolvedChains = new List<int>();
 
 
-        // Allow reusage of straight skeleton buffer data
-        public void Generate(IReadOnlyList<float2> points, StraightSkeleton output)
+        // Allows reusage of straight skeleton buffer data
+        public void Generate(IReadOnlyList<float2> points, StraightSkeleton output, float maxDepth = float.MaxValue)
         {
             output.Clear();
 
@@ -320,6 +330,25 @@ namespace AggroBird.StraightSkeleton
             }
 
             int pointCount = points.Count;
+
+#if WITH_DEBUG
+            for (int i = 0; i < pointCount; i++)
+            {
+                int j = (i + 1) % pointCount;
+                output.DrawDebugLine(points[i], points[j], Color.white);
+            }
+#endif
+
+            // Max depth less than zero yields one single polygon
+            if (maxDepth <= 0)
+            {
+                List<float3> buffer = output.GetBuffer();
+                for (int i = 0; i < pointCount; i++)
+                {
+                    buffer.Add(new float3(points[i], 0));
+                }
+                return;
+            }
 
             // Create initial chain
             chainVertexCount = pointCount;
@@ -346,6 +375,7 @@ namespace AggroBird.StraightSkeleton
             }
             activeChains.Clear();
             activeChains.Add(0);
+            abortedChains.Clear();
 
             // Create initial starting polygons
             polygonVertexCount = chainVertexCount * 2;
@@ -368,14 +398,6 @@ namespace AggroBird.StraightSkeleton
                 polygonVertices[rhsIdx] = rhs;
             }
 
-#if WITH_DEBUG
-            for (int i = 0; i < chainVertexCount; i++)
-            {
-                int j = (i + 1) % chainVertexCount;
-                output.DrawDebugLine(chainVertices[i].position, chainVertices[j].position, Color.white);
-            }
-#endif
-
             int pass = 0;
             while (activeChains.Count > 0)
             {
@@ -384,26 +406,40 @@ namespace AggroBird.StraightSkeleton
                     throw new StraightSkeletonException("Max polygon shrink iteration count reached");
                 }
 
-                newChains.Clear();
+                splitChains.Clear();
                 for (int i = 0; i < activeChains.Count; i++)
                 {
                     int activeChain = activeChains[i];
 
+                    // Find shortest shrink distance
                     if (!CalculateShortestShrinkDistance(activeChain, out float distance))
                     {
                         throw new StraightSkeletonException("Failed to find distance shortest shrink distance");
                     }
 
+                    // Clamp to specified max height
+                    float currentDepth = chainVertices[activeChain].depth;
+                    bool maxDepthReached = currentDepth + distance >= maxDepth;
+                    if (maxDepthReached)
+                    {
+                        distance = maxDepth - currentDepth;
+                    }
+
+                    // Apply shrink distance
                     if (distance > 0)
                     {
                         ApplyShrinkDistance(activeChain, distance);
                     }
 
-                    ProcessIntersectionEvents(activeChain, pass);
+                    // Process intersection events
+                    ProcessIntersectionEvents(activeChain, pass, maxDepthReached ? abortedChains : splitChains);
                 }
 
                 activeChains.Clear();
-                activeChains.AddRange(newChains);
+                if (splitChains.Count > 0)
+                {
+                    activeChains.AddRange(splitChains);
+                }
 
 #if WITH_DEBUG
                 foreach (var chain in activeChains)
@@ -419,6 +455,30 @@ namespace AggroBird.StraightSkeleton
                     while (vertIdx != chain);
                 }
 #endif
+            }
+
+            // Link up aborted chains
+            for (int i = 0; i < abortedChains.Count; i++)
+            {
+                List<float3> buffer = output.GetBuffer();
+                output.CenterPolygonCount++;
+                int aborted = abortedChains[i];
+                int vertIdx = aborted;
+                do
+                {
+                    ref ChainVertex prev = ref chainVertices[vertIdx];
+                    ref ChainVertex next = ref chainVertices[prev.nextChainVert];
+                    int lhsIdx = AddPolygonVertex(new PolygonVertex(next.position, next.depth)).index;
+                    int rhsIdx = AddPolygonVertex(new PolygonVertex(prev.position, prev.depth)).index;
+                    ref PolygonVertex lhs = ref polygonVertices[lhsIdx];
+                    ref PolygonVertex rhs = ref polygonVertices[rhsIdx];
+                    lhs.LinkPrev(ref polygonVertices[next.rhsPolyVert]);
+                    rhs.LinkNext(ref polygonVertices[prev.lhsPolyVert]);
+                    lhs.LinkNext(ref rhs);
+                    vertIdx = next.index;
+                    buffer.Add(new float3(prev.position, prev.depth));
+                }
+                while (vertIdx != aborted);
             }
 
 #if WITH_DEBUG
@@ -531,10 +591,10 @@ namespace AggroBird.StraightSkeleton
                 while (index != first);
             }
         }
-        public StraightSkeleton Generate(IReadOnlyList<float2> points)
+        public StraightSkeleton Generate(IReadOnlyList<float2> points, float maxDepth = float.MaxValue)
         {
             StraightSkeleton output = new StraightSkeleton();
-            Generate(points, output);
+            Generate(points, output, maxDepth);
             return output;
         }
 
@@ -637,6 +697,13 @@ namespace AggroBird.StraightSkeleton
                 ref ChainVertex prev = ref chainVertices[vertIdx];
                 ref ChainVertex next = ref chainVertices[prev.nextChainVert];
                 prev.RecalculateSegment(next.position);
+                vertIdx = prev.nextChainVert;
+            }
+            while (vertIdx != chain);
+            do
+            {
+                ref ChainVertex prev = ref chainVertices[vertIdx];
+                ref ChainVertex next = ref chainVertices[prev.nextChainVert];
                 next.RecalculateBisector(prev.direction);
                 vertIdx = prev.nextChainVert;
             }
@@ -644,7 +711,7 @@ namespace AggroBird.StraightSkeleton
         }
 
         // Check for any intersections (results in one or more new chains)
-        private void ProcessIntersectionEvents(int chain, int pass)
+        private void ProcessIntersectionEvents(int chain, int pass, List<int> appendResult)
         {
             // This phase scans over all the vertices and checks for split events.
             // In the case of a split event, it will emit a new vertex parallel to the segment.
@@ -817,7 +884,7 @@ namespace AggroBird.StraightSkeleton
                 if (vertCount > 2)
                 {
                     // New valid chain
-                    newChains.Add(first);
+                    appendResult.Add(first);
                 }
                 else if (vertCount == 2)
                 {

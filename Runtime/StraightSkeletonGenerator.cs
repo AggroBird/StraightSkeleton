@@ -17,14 +17,15 @@ namespace AggroBird.StraightSkeleton
         }
     }
 
-    public sealed class StraightSkeleton : IReadOnlyList<IReadOnlyList<float2>>
+    // xy = coordinate, z = depth
+    public sealed class StraightSkeleton : IReadOnlyList<IReadOnlyList<float3>>
     {
-        private readonly List<List<float2>> polygons = new List<List<float2>>();
+        private readonly List<List<float3>> polygons = new List<List<float3>>();
 
         public int Count { get; private set; }
-        public IReadOnlyList<float2> this[int index] => polygons[index];
+        public IReadOnlyList<float3> this[int index] => polygons[index];
 
-        public IEnumerator<IReadOnlyList<float2>> GetEnumerator()
+        public IEnumerator<IReadOnlyList<float3>> GetEnumerator()
         {
             for (int i = 0; i < Count; i++)
             {
@@ -45,12 +46,12 @@ namespace AggroBird.StraightSkeleton
 #endif
         }
 
-        internal List<float2> GetBuffer()
+        internal List<float3> GetBuffer()
         {
-            List<float2> buffer;
+            List<float3> buffer;
             if (polygons.Count == Count)
             {
-                buffer = new List<float2>();
+                buffer = new List<float3>();
                 polygons.Add(buffer);
                 Count++;
             }
@@ -105,11 +106,12 @@ namespace AggroBird.StraightSkeleton
 
         private struct PolygonVertex
         {
-            public PolygonVertex(float2 position, int pass = 0)
+            public PolygonVertex(float2 position, float depth, int pass = 0)
             {
                 index = -1;
 
                 this.position = position;
+                this.depth = depth;
                 this.pass = pass;
 
                 prevPolyVert = -1;
@@ -117,6 +119,9 @@ namespace AggroBird.StraightSkeleton
             }
 
             public int index;
+
+            // Depth of the polygon vertex into the shrinking
+            public float depth;
 
             // The index of the pass this vertex was inserted
             public int pass;
@@ -158,6 +163,9 @@ namespace AggroBird.StraightSkeleton
         private struct ChainVertex
         {
             public int index;
+
+            // Depth of the polygon vertex into the shrinking
+            public float depth;
 
             // The index of the pass this vertex was inserted
             public int pass;
@@ -337,8 +345,8 @@ namespace AggroBird.StraightSkeleton
                 ref ChainVertex next = ref chainVertices[j];
                 ref ChainVertex prev = ref chainVertices[i];
                 int lhsIdx = idx++, rhsIdx = idx++;
-                PolygonVertex lhs = new PolygonVertex(next.position);
-                PolygonVertex rhs = new PolygonVertex(prev.position);
+                PolygonVertex lhs = new PolygonVertex(next.position, 0);
+                PolygonVertex rhs = new PolygonVertex(prev.position, 0);
                 lhs.index = lhsIdx;
                 rhs.index = rhsIdx;
                 lhs.prevPolyVert = rhsIdx;
@@ -378,7 +386,7 @@ namespace AggroBird.StraightSkeleton
 
                     ApplyShrinkDistance(activeChain, distance);
 
-                    ProcessIntersectionEvents(activeChain, pass);
+                    ProcessIntersectionEvents(activeChain, distance, pass);
                 }
 
                 activeChains.Clear();
@@ -499,13 +507,13 @@ namespace AggroBird.StraightSkeleton
             // Output result
             for (int i = 0; i < pointCount; i++)
             {
-                List<float2> buffer = output.GetBuffer();
+                List<float3> buffer = output.GetBuffer();
                 int first = i * 2;
                 int index = first;
                 do
                 {
                     ref PolygonVertex vertex = ref polygonVertices[index];
-                    buffer.Add(vertex.position);
+                    buffer.Add(new float3(vertex.position, vertex.depth));
                     index = vertex.nextPolyVert;
                 }
                 while (index != first);
@@ -619,7 +627,7 @@ namespace AggroBird.StraightSkeleton
         }
 
         // Check for any intersections (results in one or more new chains)
-        private void ProcessIntersectionEvents(int chain, int pass)
+        private void ProcessIntersectionEvents(int chain, float distance, int pass)
         {
             // This phase scans over all the vertices and checks for overlapping (incident) vertices.
             // In the case of a split event, it will emit a new vertex parallel to the segment so that
@@ -658,11 +666,11 @@ namespace AggroBird.StraightSkeleton
                             // Insert new vertex on segment
                             ref ChainVertex segBeg = ref chainVertices[bestResult.segment];
                             ref ChainVertex segEnd = ref chainVertices[segBeg.nextChainVert];
-                            ref ChainVertex insert = ref AddChainVertex(new ChainVertex { position = bestResult.point, pass = pass });
+                            ref ChainVertex insert = ref AddChainVertex(new ChainVertex { position = bestResult.point, depth = segBeg.depth, pass = pass });
                             insert.Link(ref segBeg, ref segEnd);
                             RecalculateSegments(ref insert);
                             // Create an empty polygon vertex at the split position
-                            insert.lhsPolyVert = insert.rhsPolyVert = AddPolygonVertex(new PolygonVertex(bestResult.point, pass)).index;
+                            insert.lhsPolyVert = insert.rhsPolyVert = AddPolygonVertex(new PolygonVertex(bestResult.point, segBeg.depth, pass)).index;
                         }
                     }
                 }
@@ -722,18 +730,19 @@ namespace AggroBird.StraightSkeleton
                             {
                                 ref ChainVertex prevIncident = ref chainVertices[incidentVertices[i]];
                                 ref ChainVertex nextIncident = ref chainVertices[incidentVertices[(i + 1) % incidentCount]];
+                                float depth = prevIncident.depth;
 
                                 // If there are vertices between the previous and next incident vertices,
                                 // we have to split them off into a new chain
                                 if (prevIncident.nextChainVert != nextIncident.index)
                                 {
-                                    ref ChainVertex insert = ref AddChainVertex(new ChainVertex { position = vert.position, pass = pass });
+                                    ref ChainVertex insert = ref AddChainVertex(new ChainVertex { position = vert.position, depth = depth, pass = pass });
 
                                     int nextPolygon = prevIncident.rhsPolyVert;
                                     if (polygonVertices[nextPolygon].pass != pass)
                                     {
                                         // Insert a polygon vertex on the right side of the left polygon
-                                        ref PolygonVertex lhs = ref AddPolygonVertex(new PolygonVertex(vert.position, pass));
+                                        ref PolygonVertex lhs = ref AddPolygonVertex(new PolygonVertex(vert.position, depth, pass));
                                         lhs.LinkNext(ref polygonVertices[nextPolygon]);
                                         insert.rhsPolyVert = lhs.index;
                                     }
@@ -747,7 +756,7 @@ namespace AggroBird.StraightSkeleton
                                     if (polygonVertices[prevPolygon].pass != pass)
                                     {
                                         // Insert a polygon vertex on the left side of the right polygon
-                                        ref PolygonVertex rhs = ref AddPolygonVertex(new PolygonVertex(vert.position, pass));
+                                        ref PolygonVertex rhs = ref AddPolygonVertex(new PolygonVertex(vert.position, depth, pass));
                                         rhs.LinkPrev(ref polygonVertices[prevPolygon]);
                                         insert.lhsPolyVert = rhs.index;
                                     }
@@ -764,7 +773,7 @@ namespace AggroBird.StraightSkeleton
                                 else
                                 {
                                     // Close into a triangle
-                                    ref PolygonVertex end = ref AddPolygonVertex(new PolygonVertex(vert.position, pass));
+                                    ref PolygonVertex end = ref AddPolygonVertex(new PolygonVertex(vert.position, depth, pass));
                                     end.Link(ref polygonVertices[nextIncident.lhsPolyVert], ref polygonVertices[prevIncident.rhsPolyVert]);
                                 }
                             }

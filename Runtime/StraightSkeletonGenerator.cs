@@ -613,6 +613,7 @@ namespace AggroBird.StraightSkeleton
             {
                 ref ChainVertex vert = ref chainVertices[vertIdx];
                 vert.position += vert.bisector * (distance / vert.velocity);
+                vert.depth += distance;
                 vertIdx = vert.nextChainVert;
             }
             while (vertIdx != chain);

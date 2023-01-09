@@ -95,8 +95,8 @@ namespace AggroBird.StraightSkeleton
                 foreach (var subPolygon in straightSkeleton)
                 {
                     int vertCount = subPolygon.Count;
-                    float2 p0 = subPolygon[vertCount - 1];
-                    float2 p1 = subPolygon[0];
+                    float3 p0 = subPolygon[vertCount - 1];
+                    float3 p1 = subPolygon[0];
                     float size = math.length(p1 - p0);
 
                     vertices.Add(new Vector3(p0.x, 0, p0.y));
@@ -133,18 +133,19 @@ namespace AggroBird.StraightSkeleton
                 {
                     triangulation = new TriangulationNode[vertCount];
                 }
-                float2 origin = subPolygon[0];
-                float2 dir = math.normalize(origin - subPolygon[vertCount - 1]);
+                float2 origin = subPolygon[0].xy;
+                float2 dir = math.normalize(origin - subPolygon[vertCount - 1].xy);
                 float2 perp = new float2(dir.y, -dir.x);
                 int offset = vertices.Count;
                 for (int i = 0; i < vertCount; i++)
                 {
                     int next = (i + 1) % vertCount;
                     int prev = (i + vertCount - 1) % vertCount;
-                    float2 pos = subPolygon[i];
+                    float3 vert = subPolygon[i];
+                    float2 pos = vert.xy;
                     float2 relative = pos - origin;
                     triangulation[i] = new TriangulationNode(offset + i, pos, prev, next);
-                    vertices.Add(new Vector3(pos.x, math.dot(relative, perp) * slope + wallHeight, pos.y));
+                    vertices.Add(new Vector3(pos.x, vert.z * slope + wallHeight, pos.y));
                     texcoords.Add(new Vector2(math.dot(relative, dir), math.dot(relative, perp) * v));
                     colors.Add(roofColor);
                 }

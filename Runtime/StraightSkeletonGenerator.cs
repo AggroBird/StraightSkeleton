@@ -70,6 +70,17 @@ namespace AggroBird.StraightSkeleton
         {
             debugOutput.Add((from, to, color));
         }
+        internal void AddDebugSquare(float2 position, float size, Color color)
+        {
+            float2 p0 = position - size * 0.5f;
+            float2 p1 = p0 + new float2(0, size);
+            float2 p2 = p1 + new float2(size, 0);
+            float2 p3 = p2 - new float2(0, size);
+            debugOutput.Add((p0, p1, color));
+            debugOutput.Add((p1, p2, color));
+            debugOutput.Add((p2, p3, color));
+            debugOutput.Add((p3, p0, color));
+        }
 #else
         public IReadOnlyList<(float2 from, float2 to, Color color)> DebugOutput => Array.Empty<(float2, float2, Color)>();
 #endif

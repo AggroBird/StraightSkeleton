@@ -353,8 +353,8 @@ namespace AggroBird.StraightSkeleton
             for (int i = 0, idx = 0; i < chainVertexCount; i++)
             {
                 int j = (i + 1) % chainVertexCount;
-                ref ChainVertex next = ref chainVertices[j];
                 ref ChainVertex prev = ref chainVertices[i];
+                ref ChainVertex next = ref chainVertices[j];
                 int lhsIdx = idx++, rhsIdx = idx++;
                 PolygonVertex lhs = new PolygonVertex(next.position, 0);
                 PolygonVertex rhs = new PolygonVertex(prev.position, 0);
@@ -362,8 +362,8 @@ namespace AggroBird.StraightSkeleton
                 rhs.index = rhsIdx;
                 lhs.prevPolyVert = rhsIdx;
                 rhs.nextPolyVert = lhsIdx;
-                next.lhsPolyVert = lhsIdx;
-                prev.rhsPolyVert = rhsIdx;
+                next.rhsPolyVert = lhsIdx;
+                prev.lhsPolyVert = rhsIdx;
                 polygonVertices[lhsIdx] = lhs;
                 polygonVertices[rhsIdx] = rhs;
             }
@@ -749,32 +749,32 @@ namespace AggroBird.StraightSkeleton
                                 {
                                     ref ChainVertex insert = ref AddChainVertex(new ChainVertex { position = vert.position, depth = depth, pass = pass });
 
-                                    int nextPolygon = prevIncident.rhsPolyVert;
+                                    int nextPolygon = prevIncident.lhsPolyVert;
                                     if (polygonVertices[nextPolygon].pass != pass)
                                     {
                                         // Insert a polygon vertex on the right side of the left polygon
                                         ref PolygonVertex lhs = ref AddPolygonVertex(new PolygonVertex(vert.position, depth, pass));
                                         lhs.LinkNext(ref polygonVertices[nextPolygon]);
-                                        insert.rhsPolyVert = lhs.index;
+                                        insert.lhsPolyVert = lhs.index;
                                     }
                                     else
                                     {
                                         // If the polygon point inserted through a split event, we dont have to insert a new vertex
-                                        insert.rhsPolyVert = nextPolygon;
+                                        insert.lhsPolyVert = nextPolygon;
                                     }
 
-                                    int prevPolygon = nextIncident.lhsPolyVert;
+                                    int prevPolygon = nextIncident.rhsPolyVert;
                                     if (polygonVertices[prevPolygon].pass != pass)
                                     {
                                         // Insert a polygon vertex on the left side of the right polygon
                                         ref PolygonVertex rhs = ref AddPolygonVertex(new PolygonVertex(vert.position, depth, pass));
                                         rhs.LinkPrev(ref polygonVertices[prevPolygon]);
-                                        insert.lhsPolyVert = rhs.index;
+                                        insert.rhsPolyVert = rhs.index;
                                     }
                                     else
                                     {
                                         // If the polygon point inserted through a split event, we dont have to insert a new vertex
-                                        insert.lhsPolyVert = prevPolygon;
+                                        insert.rhsPolyVert = prevPolygon;
                                     }
 
                                     insert.Link(ref chainVertices[nextIncident.prevChainVert], ref chainVertices[prevIncident.nextChainVert]);
@@ -785,7 +785,7 @@ namespace AggroBird.StraightSkeleton
                                 {
                                     // Close into a triangle
                                     ref PolygonVertex end = ref AddPolygonVertex(new PolygonVertex(vert.position, depth, pass));
-                                    end.Link(ref polygonVertices[nextIncident.lhsPolyVert], ref polygonVertices[prevIncident.rhsPolyVert]);
+                                    end.Link(ref polygonVertices[nextIncident.rhsPolyVert], ref polygonVertices[prevIncident.lhsPolyVert]);
                                 }
                             }
 
@@ -824,17 +824,19 @@ namespace AggroBird.StraightSkeleton
                     // If we have only two vertices we can collapse the segment and close the polygons
                     ref ChainVertex prev = ref chainVertices[first];
                     ref ChainVertex next = ref chainVertices[prev.nextChainVert];
+
                     ref PolygonVertex prevLhs = ref polygonVertices[prev.lhsPolyVert];
-                    ref PolygonVertex nextLhs = ref polygonVertices[next.lhsPolyVert];
-                    ref PolygonVertex prevRhs = ref polygonVertices[prev.rhsPolyVert];
                     ref PolygonVertex nextRhs = ref polygonVertices[next.rhsPolyVert];
-                    if (prevLhs.nextPolyVert == -1 && nextRhs.prevPolyVert == -1)
+                    if (prevLhs.prevPolyVert == -1 && nextRhs.nextPolyVert == -1)
                     {
-                        prevLhs.LinkNext(ref nextRhs);
+                        prevLhs.LinkPrev(ref nextRhs);
                     }
-                    if (prevRhs.prevPolyVert == -1 && nextLhs.nextPolyVert == -1)
+
+                    ref PolygonVertex prevRhs = ref polygonVertices[prev.rhsPolyVert];
+                    ref PolygonVertex nextLhs = ref polygonVertices[next.lhsPolyVert];
+                    if (prevRhs.nextPolyVert == -1 && nextLhs.prevPolyVert == -1)
                     {
-                        prevRhs.LinkPrev(ref nextLhs);
+                        prevRhs.LinkNext(ref nextLhs);
                     }
                 }
             }

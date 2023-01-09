@@ -394,7 +394,10 @@ namespace AggroBird.StraightSkeleton
                         throw new StraightSkeletonException("Failed to find distance shortest shrink distance");
                     }
 
-                    ApplyShrinkDistance(activeChain, distance);
+                    if (distance > 0)
+                    {
+                        ApplyShrinkDistance(activeChain, distance);
+                    }
 
                     ProcessIntersectionEvents(activeChain, pass);
                 }
@@ -554,7 +557,7 @@ namespace AggroBird.StraightSkeleton
                 float entry1 = math.dot(vert.position - next.position, n0) / math.dot(next.bisector, n0);
 
                 float entry = math.min(entry0 * vert.velocity, entry1 * next.velocity);
-                if (!float.IsInfinity(entry) && entry > 0)
+                if (!float.IsInfinity(entry) && entry >= 0)
                 {
                     if (entry < distance)
                     {
@@ -576,25 +579,28 @@ namespace AggroBird.StraightSkeleton
                             if (TracePlane(segBeg.position, perp, vert.position, vert.bisector, out entry))
                             {
                                 // Calculate time of collision (magic)
-                                float sin = math.sin(AngleBetween(vert.bisector, segBeg.direction));
-                                entry /= (1 / sin + 1 / vert.velocity);
-                                if (!float.IsInfinity(entry) && entry > 0)
+                                float angleBetween = AngleBetween(vert.bisector, segBeg.direction);
+                                if (angleBetween > 0)
                                 {
-                                    // Grow the segment along the two bisectors of its vertices and project
-                                    // the collision point to make sure this vertex will actually collide with
-                                    // this segment in the future.
-                                    float2 s0 = segBeg.position + segBeg.bisector * (entry / segBeg.velocity);
-                                    float2 s1 = segEnd.position + segEnd.bisector * (entry / segEnd.velocity);
-                                    float length = math.dot(s1 - s0, segBeg.direction);
-                                    if (length > 0)
+                                    entry /= (1 / math.sin(angleBetween) + 1 / vert.velocity);
+                                    if (!float.IsInfinity(entry) && entry >= 0)
                                     {
-                                        float2 point = vert.position + vert.bisector * (entry / vert.velocity);
-                                        float project = math.dot(point - s0, segBeg.direction);
-                                        if (project >= -MediumPrecisionEpsilon && project <= length + MediumPrecisionEpsilon)
+                                        // Grow the segment along the two bisectors of its vertices and project
+                                        // the collision point to make sure this vertex will actually collide with
+                                        // this segment in the future.
+                                        float2 s0 = segBeg.position + segBeg.bisector * (entry / segBeg.velocity);
+                                        float2 s1 = segEnd.position + segEnd.bisector * (entry / segEnd.velocity);
+                                        float length = math.dot(s1 - s0, segBeg.direction);
+                                        if (length > 0)
                                         {
-                                            if (entry < distance)
+                                            float2 point = vert.position + vert.bisector * (entry / vert.velocity);
+                                            float project = math.dot(point - s0, segBeg.direction);
+                                            if (project >= -MediumPrecisionEpsilon && project <= length + MediumPrecisionEpsilon)
                                             {
-                                                distance = entry;
+                                                if (entry < distance)
+                                                {
+                                                    distance = entry;
+                                                }
                                             }
                                         }
                                     }

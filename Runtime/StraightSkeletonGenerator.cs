@@ -105,17 +105,21 @@ namespace AggroBird.StraightSkeleton
 
         private struct PolygonVertex
         {
-            public PolygonVertex(float2 position, int passIndex = 0)
+            public PolygonVertex(float2 position, int pass = 0)
             {
+                index = -1;
+
                 this.position = position;
-                this.passIndex = passIndex;
+                this.pass = pass;
 
                 prevPolyVert = -1;
                 nextPolyVert = -1;
             }
 
+            public int index;
+
             // The index of the pass this vertex was inserted
-            public int passIndex;
+            public int pass;
 
             // 2D position of the vertex
             public float2 position;
@@ -123,21 +127,34 @@ namespace AggroBird.StraightSkeleton
             // Neighbours in the polygon linked list
             public int prevPolyVert;
             public int nextPolyVert;
+
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void Link(ref PolygonVertex prev, ref PolygonVertex next)
+            {
+                LinkPrev(ref prev);
+                LinkNext(ref next);
+            }
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void LinkPrev(ref PolygonVertex prev)
+            {
+                prev.nextPolyVert = index;
+                prevPolyVert = prev.index;
+            }
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void LinkNext(ref PolygonVertex next)
+            {
+                next.prevPolyVert = index;
+                nextPolyVert = next.index;
+            }
         }
 
-        private sealed class ChainVertex
+        private struct ChainVertex
         {
-            public ChainVertex(float2 position, int passIndex, int vertexIndex)
-            {
-                this.position = position;
-                this.passIndex = passIndex;
-                this.vertexIndex = vertexIndex;
-            }
-
-            public int vertexIndex;
+            public int index;
 
             // The index of the pass this vertex was inserted
-            public int passIndex;
+            public int pass;
 
             // 2D position of the vertex
             public float2 position;
@@ -157,37 +174,18 @@ namespace AggroBird.StraightSkeleton
             public bool IsReflex { get; private set; }
 
             // Neighbours in the chain
-            public ChainVertex prevChainVert;
-            public ChainVertex nextChainVert;
+            public int prevChainVert;
+            public int nextChainVert;
 
             // Neighbouring polygons on this axis
             public int lhsPolyVert;
             public int rhsPolyVert;
 
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void Link(ChainVertex prev, ChainVertex next)
-            {
-                LinkPrev(prev);
-                LinkNext(next);
-            }
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void LinkPrev(ChainVertex prev)
-            {
-                prevChainVert = prev;
-                prev.nextChainVert = this;
-            }
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void LinkNext(ChainVertex next)
-            {
-                nextChainVert = next;
-                next.prevChainVert = this;
-            }
-
 
             // Recalculate direction and length
-            public void RecalculateSegment()
+            public void RecalculateSegment(float2 nextPosition)
             {
-                direction = nextChainVert.position - position;
+                direction = nextPosition - position;
                 length = math.length(direction);
                 if (length <= HighPrecisionEpsilon)
                 {
@@ -200,10 +198,10 @@ namespace AggroBird.StraightSkeleton
                 }
             }
             // Recalculate bisector and angle
-            public void RecalculateBisector()
+            public void RecalculateBisector(float2 prevDirection)
             {
                 float2 a = direction;
-                float2 b = -prevChainVert.direction;
+                float2 b = -prevDirection;
 
                 float signedAngle = math.atan2(b.x * a.y - b.y * a.x, math.dot(b, a));
                 float PI2 = math.PI * 2;
@@ -214,56 +212,26 @@ namespace AggroBird.StraightSkeleton
                 IsReflex = angle > math.PI;
             }
 
-            // Recalculate this node and its neighbours
-            public void RecalculateNeighbours()
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void Link(ref ChainVertex prev, ref ChainVertex next)
             {
-                RecalculateSegment();
-                prevChainVert.RecalculateSegment();
-                nextChainVert.RecalculateSegment();
-                RecalculateBisector();
-                prevChainVert.RecalculateBisector();
-                nextChainVert.RecalculateBisector();
+                prev.nextChainVert = index;
+                prevChainVert = prev.index;
+                next.prevChainVert = index;
+                nextChainVert = next.index;
             }
 
 
             public override string ToString()
             {
-                return $"chain vertex #{vertexIndex}";
+                return $"chain vertex #{index}";
             }
         }
 
         // Chain of vertices.
         // Vertices are not guaranteed to be in order, so they are stored as a linked list.
-        private class Chain : IEnumerable<ChainVertex>
+        /*private class Chain : IEnumerable<ChainVertex>
         {
-            public Chain()
-            {
-
-            }
-            public Chain(IReadOnlyList<float2> points)
-            {
-                int pointCount = points.Count;
-                for (int i = 0; i < pointCount; i++)
-                {
-                    vertices.Add(new ChainVertex(points[i], 0, i));
-                }
-
-                // Initialize the chain linked list
-                for (int i = 0; i < pointCount; i++)
-                {
-                    int n = (i + 1) % pointCount;
-                    int p = (i - 1 + pointCount) % pointCount;
-                    vertices[i].nextChainVert = vertices[n];
-                    vertices[i].prevChainVert = vertices[p];
-                    vertices[i].RecalculateSegment();
-                }
-                // Initialize the bisectors
-                for (int i = 0; i < pointCount; i++)
-                {
-                    vertices[i].RecalculateBisector();
-                }
-            }
-
 
             public ChainVertex First => vertices[0];
             public int Count => vertices.Count;
@@ -298,93 +266,6 @@ namespace AggroBird.StraightSkeleton
             }
 
 
-            // Calculates the shortest shrink distance at which point a collision will occur
-            public bool CalculateShortestShrinkDistance(out float shortest)
-            {
-                shortest = float.PositiveInfinity;
-                for (int i = 0; i < vertices.Count; i++)
-                {
-                    ChainVertex v0 = vertices[i], v1 = v0.nextChainVert;
-
-                    // Project the two bisectors onto each other and find the shortest collapse distance (edge event)
-                    float2 n0 = new float2(-v0.bisector.y, v0.bisector.x);
-                    float2 n1 = new float2(v1.bisector.y, -v1.bisector.x);
-
-                    float entry0 = math.dot(v1.position - v0.position, n1) / math.dot(v0.bisector, n1);
-                    float entry1 = math.dot(v0.position - v1.position, n0) / math.dot(v1.bisector, n0);
-
-                    float entry = math.min(entry0 * v0.velocity, entry1 * v1.velocity);
-                    if (!float.IsInfinity(entry) && entry > 0)
-                    {
-                        if (entry < shortest)
-                        {
-                            shortest = entry;
-                        }
-                    }
-
-                    if (v0.IsReflex)
-                    {
-                        // Find the earliest segment intersect with a reflex vertex (split event)
-                        v1 = v0;
-                        do
-                        {
-                            ChainVertex v2 = v1.nextChainVert;
-                            if (v1 != v0 && v2 != v0)
-                            {
-                                float2 perp = new float2(v1.direction.y, -v1.direction.x);
-                                if (TracePlane(v1.position, perp, v0.position, v0.bisector, out entry))
-                                {
-                                    // Calculate time of collision (magic)
-                                    float sin = math.sin(AngleBetween(v0.bisector, v1.direction));
-                                    entry /= (1 / sin + 1 / v0.velocity);
-                                    if (!float.IsInfinity(entry) && entry > 0)
-                                    {
-                                        // Grow the segment along the two bisectors of its vertices and project
-                                        // the collision point to make sure this vertex will actually collide with
-                                        // this segment in the future.
-                                        float2 s0 = v1.position + v1.bisector * (entry / v1.velocity);
-                                        float2 s1 = v2.position + v2.bisector * (entry / v2.velocity);
-                                        float length = math.dot(s1 - s0, v1.direction);
-                                        if (length > 0)
-                                        {
-                                            float2 point = v0.position + v0.bisector * (entry / v0.velocity);
-                                            float project = math.dot(point - s0, v1.direction);
-                                            if (project >= -MediumPrecisionEpsilon && project <= length + MediumPrecisionEpsilon)
-                                            {
-                                                if (entry < shortest)
-                                                {
-                                                    shortest = entry;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            v1 = v2;
-                        }
-                        while (!v1.Equals(v0));
-                    }
-                }
-                return shortest != float.PositiveInfinity;
-            }
-
-            // Shrink the polygon
-            public void ApplyShrinkDistance(float distance)
-            {
-                for (int i = 0; i < vertices.Count; i++)
-                {
-                    ChainVertex vert = vertices[i];
-                    vert.position += vert.bisector * (distance / vert.velocity);
-                }
-
-                // Recalculate the segments after shrinking
-                for (int i = 0; i < vertices.Count; i++)
-                {
-                    vertices[i].RecalculateSegment();
-                }
-            }
-
 
             public override string ToString()
             {
@@ -397,7 +278,7 @@ namespace AggroBird.StraightSkeleton
                     return $"chain of {First} ({vertices.Count}) vertices";
                 }
             }
-        }
+        }*/
 
         private static void EnsureCapacity<T>(ref T[] buffer, int size, bool copyData)
         {
@@ -425,23 +306,34 @@ namespace AggroBird.StraightSkeleton
             }
         }
 
-        private int uniqueVertexCount = 0;
-        private readonly List<Chain> activeChains = new List<Chain>();
-        private readonly List<Chain> newChains = new List<Chain>();
+        private ChainVertex[] chainVertices = new ChainVertex[16];
+        private int chainVertexCount = 0;
+        private ref ChainVertex AddChainVertex(ChainVertex chainVertex)
+        {
+            chainVertex.index = chainVertexCount;
+            EnsureCapacity(ref chainVertices, chainVertexCount + 1, true);
+            ref ChainVertex result = ref chainVertices[chainVertexCount++];
+            result = chainVertex;
+            return ref result;
+        }
+
+        private readonly List<int> activeChains = new List<int>();
+        private readonly List<int> newChains = new List<int>();
 
         private PolygonVertex[] polygonVertices = new PolygonVertex[32];
         private int polygonVertexCount = 0;
-        private int AddPolygonVertex(PolygonVertex polygonVertex)
+        private ref PolygonVertex AddPolygonVertex(PolygonVertex polygonVertex)
         {
-            int idx = polygonVertexCount;
+            polygonVertex.index = polygonVertexCount;
             EnsureCapacity(ref polygonVertices, polygonVertexCount + 1, true);
-            polygonVertices[polygonVertexCount++] = polygonVertex;
-            return idx;
+            ref PolygonVertex result = ref polygonVertices[polygonVertexCount++];
+            result = polygonVertex;
+            return ref result;
         }
 
-        private readonly List<ChainVertex> incidentVertices = new List<ChainVertex>();
-        private readonly List<ChainVertex> unresolvedChains = new List<ChainVertex>();
-        private readonly List<ChainVertex> resolvedChains = new List<ChainVertex>();
+        private readonly List<int> incidentVertices = new List<int>();
+        private readonly List<int> unresolvedChains = new List<int>();
+        private readonly List<int> resolvedChains = new List<int>();
 
 
         // Allow reusage of straight skeleton buffer data
@@ -454,19 +346,47 @@ namespace AggroBird.StraightSkeleton
                 throw new StraightSkeletonException("Invalid input polygon provided");
             }
 
-            Chain firstChain = new Chain(points);
-            int pointCount = uniqueVertexCount = points.Count;
+            int pointCount = points.Count;
+
+            // Create initial chain
+            chainVertexCount = pointCount;
+            EnsureCapacity(ref chainVertices, chainVertexCount, false);
+            for (int i = 0; i < chainVertexCount; i++)
+            {
+                chainVertices[i] = new ChainVertex { index = i, position = points[i] };
+            }
+            for (int i = 0; i < chainVertexCount; i++)
+            {
+                int j = (i + 1) % chainVertexCount;
+                ref ChainVertex prev = ref chainVertices[i];
+                ref ChainVertex next = ref chainVertices[j];
+                prev.nextChainVert = j;
+                next.prevChainVert = i;
+                prev.RecalculateSegment(next.position);
+            }
+            for (int i = 0; i < chainVertexCount; i++)
+            {
+                int j = (i + 1) % chainVertexCount;
+                ref ChainVertex prev = ref chainVertices[i];
+                ref ChainVertex next = ref chainVertices[j];
+                next.RecalculateBisector(prev.direction);
+            }
+            activeChains.Clear();
+            activeChains.Add(0);
 
             // Create initial starting polygons
-            int initialPolygonVertexCount = pointCount * 2;
-            EnsureCapacity(ref polygonVertices, initialPolygonVertexCount, false);
-            for (int i = 0, idx = 0; i < pointCount; i++)
+            polygonVertexCount = chainVertexCount * 2;
+            EnsureCapacity(ref polygonVertices, polygonVertexCount, false);
+            for (int i = 0, idx = 0; i < chainVertexCount; i++)
             {
-                ChainVertex next = firstChain[i].nextChainVert;
-                ChainVertex prev = next.prevChainVert;
+                int j = (i + 1) % chainVertexCount;
+                ref ChainVertex next = ref chainVertices[j];
+                ref ChainVertex prev = ref chainVertices[i];
                 int lhsIdx = idx++, rhsIdx = idx++;
                 PolygonVertex lhs = new PolygonVertex(next.position);
                 PolygonVertex rhs = new PolygonVertex(prev.position);
+                lhs.index = lhsIdx;
+                rhs.index = rhsIdx;
                 lhs.prevPolyVert = rhsIdx;
                 rhs.nextPolyVert = lhsIdx;
                 next.lhsPolyVert = lhsIdx;
@@ -474,22 +394,20 @@ namespace AggroBird.StraightSkeleton
                 polygonVertices[lhsIdx] = lhs;
                 polygonVertices[rhsIdx] = rhs;
             }
-            polygonVertexCount = initialPolygonVertexCount;
 
 #if WITH_DEBUG
-            foreach (var vert in firstChain)
+            for (int i = 0; i < chainVertexCount; i++)
             {
-                output.AddDebugLine(vert.position, vert.nextChainVert.position, Color.white);
+                int j = (i + 1) % chainVertexCount;
+                output.AddDebugLine(chainVertices[i].position, chainVertices[j].position, Color.white);
+                output.AddDebugLine(chainVertices[i].position, chainVertices[i].position + chainVertices[i].bisector * 0.1f, Color.blue);
             }
 #endif
 
-            activeChains.Clear();
-            activeChains.Add(firstChain);
-
-            int passIndex = 0;
+            int pass = 0;
             while (activeChains.Count > 0)
             {
-                if (passIndex++ > pointCount)
+                if (pass++ > pointCount)
                 {
                     throw new StraightSkeletonException("Max polygon shrink iteration count reached");
                 }
@@ -497,16 +415,16 @@ namespace AggroBird.StraightSkeleton
                 newChains.Clear();
                 for (int i = 0; i < activeChains.Count; i++)
                 {
-                    Chain activeChain = activeChains[i];
+                    int activeChain = activeChains[i];
 
-                    if (!activeChain.CalculateShortestShrinkDistance(out float distance))
+                    if (!CalculateShortestShrinkDistance(activeChain, out float distance))
                     {
                         throw new StraightSkeletonException("Failed to find distance shortest shrink distance");
                     }
 
-                    activeChain.ApplyShrinkDistance(distance);
+                    ApplyShrinkDistance(activeChain, distance);
 
-                    ProcessIntersectionEvents(activeChain, passIndex);
+                    ProcessIntersectionEvents(activeChain, pass);
                 }
 
                 activeChains.Clear();
@@ -515,10 +433,16 @@ namespace AggroBird.StraightSkeleton
 #if WITH_DEBUG
                 foreach (var chain in activeChains)
                 {
-                    foreach (var vert in chain)
+                    int vertIdx = chain;
+                    do
                     {
-                        output.AddDebugLine(vert.position, vert.nextChainVert.position, Color.grey);
+                        ref ChainVertex vert = ref chainVertices[vertIdx];
+                        ref ChainVertex next = ref chainVertices[vert.nextChainVert];
+                        output.AddDebugLine(vert.position, next.position, Color.grey);
+                        output.AddDebugLine(vert.position, vert.position + vert.bisector * 0.1f, Color.blue);
+                        vertIdx = vert.nextChainVert;
                     }
+                    while (vertIdx != chain);
                 }
 #endif
             }
@@ -640,120 +564,224 @@ namespace AggroBird.StraightSkeleton
             return output;
         }
 
-        // Check for any intersections (results in one or more new chains)
-        private void ProcessIntersectionEvents(Chain chain, int passIndex)
+        // Calculates the shortest shrink distance at which point a collision will occur
+        private bool CalculateShortestShrinkDistance(int chain, out float distance)
         {
-            ChainVertex vertex;
+            distance = float.PositiveInfinity;
 
+            int vertIdx = chain;
+            do
+            {
+                ref ChainVertex vert = ref chainVertices[vertIdx];
+                ref ChainVertex next = ref chainVertices[vert.nextChainVert];
+
+                // Project the two bisectors onto each other and find the shortest collapse distance (edge event)
+                float2 n0 = new float2(-vert.bisector.y, vert.bisector.x);
+                float2 n1 = new float2(next.bisector.y, -next.bisector.x);
+
+                float entry0 = math.dot(next.position - vert.position, n1) / math.dot(vert.bisector, n1);
+                float entry1 = math.dot(vert.position - next.position, n0) / math.dot(next.bisector, n0);
+
+                float entry = math.min(entry0 * vert.velocity, entry1 * next.velocity);
+                if (!float.IsInfinity(entry) && entry > 0)
+                {
+                    if (entry < distance)
+                    {
+                        distance = entry;
+                    }
+                }
+
+                if (vert.IsReflex)
+                {
+                    // Find the earliest segment intersect with a reflex vertex (split event)
+                    int segIdx = vertIdx;
+                    do
+                    {
+                        ref ChainVertex segBeg = ref chainVertices[segIdx];
+                        ref ChainVertex segEnd = ref chainVertices[segBeg.nextChainVert];
+                        if (segIdx != vertIdx && segBeg.nextChainVert != vertIdx)
+                        {
+                            float2 perp = new float2(segBeg.direction.y, -segBeg.direction.x);
+                            if (TracePlane(segBeg.position, perp, vert.position, vert.bisector, out entry))
+                            {
+                                // Calculate time of collision (magic)
+                                float sin = math.sin(AngleBetween(vert.bisector, segBeg.direction));
+                                entry /= (1 / sin + 1 / vert.velocity);
+                                if (!float.IsInfinity(entry) && entry > 0)
+                                {
+                                    // Grow the segment along the two bisectors of its vertices and project
+                                    // the collision point to make sure this vertex will actually collide with
+                                    // this segment in the future.
+                                    float2 s0 = segBeg.position + segBeg.bisector * (entry / segBeg.velocity);
+                                    float2 s1 = segEnd.position + segEnd.bisector * (entry / segEnd.velocity);
+                                    float length = math.dot(s1 - s0, segBeg.direction);
+                                    if (length > 0)
+                                    {
+                                        float2 point = vert.position + vert.bisector * (entry / vert.velocity);
+                                        float project = math.dot(point - s0, segBeg.direction);
+                                        if (project >= -MediumPrecisionEpsilon && project <= length + MediumPrecisionEpsilon)
+                                        {
+                                            if (entry < distance)
+                                            {
+                                                distance = entry;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        segIdx = segBeg.nextChainVert;
+                    }
+                    while (segIdx != vertIdx);
+                }
+
+                vertIdx = vert.nextChainVert;
+            }
+            while (vertIdx != chain);
+
+            return distance != float.PositiveInfinity;
+        }
+
+        // Shrink the polygon
+        private void ApplyShrinkDistance(int chain, float distance)
+        {
+            int vertIdx = chain;
+            do
+            {
+                ref ChainVertex vert = ref chainVertices[vertIdx];
+                vert.position += vert.bisector * (distance / vert.velocity);
+                vertIdx = vert.nextChainVert;
+            }
+            while (vertIdx != chain);
+            do
+            {
+                ref ChainVertex prev = ref chainVertices[vertIdx];
+                ref ChainVertex next = ref chainVertices[prev.nextChainVert];
+                prev.RecalculateSegment(next.position);
+                vertIdx = prev.nextChainVert;
+            }
+            while (vertIdx != chain);
+        }
+
+        // Check for any intersections (results in one or more new chains)
+        private void ProcessIntersectionEvents(int chain, int pass)
+        {
             // This phase scans over all the vertices and checks for overlapping (incident) vertices.
             // In the case of a split event, it will emit a new vertex parallel to the segment so that
             // it can be picked up later by the split stage.
-            ChainVertex first = chain.First;
-            vertex = first;
+            int vertIdx = chain;
             do
             {
+                ref ChainVertex vert = ref chainVertices[vertIdx];
+
                 // No need to resolve intersections with inserted split polygons
-                if (vertex.passIndex != passIndex)
+                if (vert.pass != pass)
                 {
                     // Find closest intersect
                     IntersectResult bestResult = IntersectResult.None;
-                    ChainVertex segment = vertex;
+                    int segIdx = vertIdx;
                     do
                     {
-                        if (segment != vertex && segment.nextChainVert != vertex)
+                        ref ChainVertex seg = ref chainVertices[segIdx];
+                        if (segIdx != vertIdx && seg.nextChainVert != vertIdx)
                         {
-                            AppendIntersect(vertex, segment, LowPrecisionEpsilon, ref bestResult);
+                            AppendIntersect(ref vert, ref seg, ref chainVertices[seg.nextChainVert], LowPrecisionEpsilon, ref bestResult);
                         }
 
-                        segment = segment.nextChainVert;
+                        segIdx = seg.nextChainVert;
                     }
-                    while (!segment.Equals(vertex));
+                    while (segIdx != vertIdx);
 
                     if (bestResult)
                     {
                         // Snap vertex to intersect location
-                        vertex.position = bestResult.point;
-                        vertex.RecalculateNeighbours();
+                        vert.position = bestResult.point;
+                        RecalculateSegments(ref vert);
 
                         if (!bestResult.IsIncident)
                         {
                             // Insert new vertex on segment
-                            ChainVertex prev = bestResult.segment, next = prev.nextChainVert;
-                            ChainVertex insert = new ChainVertex(bestResult.point, passIndex, uniqueVertexCount++);
+                            ref ChainVertex segBeg = ref chainVertices[bestResult.segment];
+                            ref ChainVertex segEnd = ref chainVertices[segBeg.nextChainVert];
+                            ref ChainVertex insert = ref AddChainVertex(new ChainVertex { position = bestResult.point, pass = pass });
+                            insert.Link(ref segBeg, ref segEnd);
+                            RecalculateSegments(ref insert);
                             // Create an empty polygon vertex at the split position
-                            insert.lhsPolyVert = insert.rhsPolyVert = AddPolygonVertex(new PolygonVertex(bestResult.point, passIndex));
-                            insert.Link(prev, next);
-                            insert.RecalculateNeighbours();
+                            insert.lhsPolyVert = insert.rhsPolyVert = AddPolygonVertex(new PolygonVertex(bestResult.point, pass)).index;
                         }
                     }
                 }
 
-                vertex = vertex.nextChainVert;
+                vertIdx = vert.nextChainVert;
             }
-            while (!vertex.Equals(first));
+            while (vertIdx != chain);
 
             // This stage takes all incident vertices and splits them up into seperate chains.
             // It also emits polygon vertices for the skeleton in the case of an edge or split event.
             resolvedChains.Clear();
             unresolvedChains.Clear();
-            unresolvedChains.Add(chain.First);
+            unresolvedChains.Add(chain);
         TraceNext:
             while (unresolvedChains.Count > 0)
             {
-                int index = unresolvedChains.Count - 1;
-                ChainVertex unresolved = unresolvedChains[index];
-                unresolvedChains.RemoveAt(index);
+                int lastIndex = unresolvedChains.Count - 1;
+                int unresolved = unresolvedChains[lastIndex];
+                unresolvedChains.RemoveAt(lastIndex);
 
-                vertex = unresolved;
+                vertIdx = unresolved;
                 do
                 {
+                    ref ChainVertex vert = ref chainVertices[vertIdx];
+
                     // No need to resolve vertices that we have already checked for incident in this pass
-                    if (vertex.passIndex != passIndex)
+                    if (vert.pass != pass)
                     {
-                        vertex.passIndex = passIndex;
+                        vert.pass = pass;
 
                         incidentVertices.Clear();
 
                         // Collect all vertices that are incident to the current vertex
-                        ChainVertex other = vertex;
+                        int otherIdx = vertIdx;
                         do
                         {
-                            if (vertex != other && IncidentVertices(vertex, other, LowPrecisionEpsilon * 2))
+                            ref ChainVertex other = ref chainVertices[otherIdx];
+                            if (vertIdx != otherIdx && IncidentVertices(vert.position, other.position, LowPrecisionEpsilon * 2))
                             {
-                                other.passIndex = passIndex;
+                                other.pass = pass;
 
-                                incidentVertices.Add(other);
+                                incidentVertices.Add(otherIdx);
                             }
 
-                            other = other.nextChainVert;
+                            otherIdx = other.nextChainVert;
                         }
-                        while (!other.Equals(vertex));
+                        while (otherIdx != vertIdx);
 
                         if (incidentVertices.Count > 0)
                         {
                             // Resolve the current vertex as well
-                            incidentVertices.Add(vertex);
+                            incidentVertices.Add(vertIdx);
 
                             // Split into subshapes
                             int incidentCount = incidentVertices.Count;
-                            for (int i = 0; i < incidentVertices.Count; i++)
+                            for (int i = 0; i < incidentCount; i++)
                             {
-                                ChainVertex prevIncident = incidentVertices[i];
-                                ChainVertex nextIncident = incidentVertices[(i + 1) % incidentCount];
+                                ref ChainVertex prevIncident = ref chainVertices[incidentVertices[i]];
+                                ref ChainVertex nextIncident = ref chainVertices[incidentVertices[(i + 1) % incidentCount]];
 
                                 // If there are vertices between the previous and next incident vertices,
                                 // we have to split them off into a new chain
-                                if (prevIncident.nextChainVert != nextIncident)
+                                if (prevIncident.nextChainVert != nextIncident.index)
                                 {
-                                    ChainVertex insert = new ChainVertex(vertex.position, passIndex, uniqueVertexCount++);
+                                    ref ChainVertex insert = ref AddChainVertex(new ChainVertex { position = vert.position, pass = pass });
 
                                     int nextPolygon = prevIncident.rhsPolyVert;
-                                    if (polygonVertices[nextPolygon].passIndex != passIndex)
+                                    if (polygonVertices[nextPolygon].pass != pass)
                                     {
                                         // Insert a polygon vertex on the right side of the left polygon
-                                        int lhs = AddPolygonVertex(new PolygonVertex(vertex.position, passIndex));
-                                        LinkPolygonVerts(lhs, nextPolygon);
-                                        insert.rhsPolyVert = lhs;
+                                        ref PolygonVertex lhs = ref AddPolygonVertex(new PolygonVertex(vert.position, pass));
+                                        lhs.LinkNext(ref polygonVertices[nextPolygon]);
+                                        insert.rhsPolyVert = lhs.index;
                                     }
                                     else
                                     {
@@ -762,12 +790,12 @@ namespace AggroBird.StraightSkeleton
                                     }
 
                                     int prevPolygon = nextIncident.lhsPolyVert;
-                                    if (polygonVertices[prevPolygon].passIndex != passIndex)
+                                    if (polygonVertices[prevPolygon].pass != pass)
                                     {
                                         // Insert a polygon vertex on the left side of the right polygon
-                                        int rhs = AddPolygonVertex(new PolygonVertex(vertex.position, passIndex));
-                                        LinkPolygonVerts(prevPolygon, rhs);
-                                        insert.lhsPolyVert = rhs;
+                                        ref PolygonVertex rhs = ref AddPolygonVertex(new PolygonVertex(vert.position, pass));
+                                        rhs.LinkPrev(ref polygonVertices[prevPolygon]);
+                                        insert.lhsPolyVert = rhs.index;
                                     }
                                     else
                                     {
@@ -775,15 +803,15 @@ namespace AggroBird.StraightSkeleton
                                         insert.lhsPolyVert = prevPolygon;
                                     }
 
-                                    insert.Link(nextIncident.prevChainVert, prevIncident.nextChainVert);
-                                    insert.RecalculateNeighbours();
-                                    unresolvedChains.Add(insert);
+                                    insert.Link(ref chainVertices[nextIncident.prevChainVert], ref chainVertices[prevIncident.nextChainVert]);
+                                    RecalculateSegments(ref insert);
+                                    unresolvedChains.Add(insert.index);
                                 }
                                 else
                                 {
                                     // Close into a triangle
-                                    int end = AddPolygonVertex(new PolygonVertex(vertex.position, passIndex));
-                                    LinkPolygonVerts(nextIncident.lhsPolyVert, end, prevIncident.rhsPolyVert);
+                                    ref PolygonVertex end = ref AddPolygonVertex(new PolygonVertex(vert.position, pass));
+                                    end.Link(ref polygonVertices[nextIncident.lhsPolyVert], ref polygonVertices[prevIncident.rhsPolyVert]);
                                 }
                             }
 
@@ -791,9 +819,9 @@ namespace AggroBird.StraightSkeleton
                         }
                     }
 
-                    vertex = vertex.nextChainVert;
+                    vertIdx = vert.nextChainVert;
                 }
-                while (!vertex.Equals(unresolved));
+                while (vertIdx != unresolved);
 
                 resolvedChains.Add(unresolved);
             }
@@ -801,26 +829,27 @@ namespace AggroBird.StraightSkeleton
             // Final stage: rebuild new chains from the split results
             for (int i = 0; i < resolvedChains.Count; i++)
             {
-                Chain newChain = new Chain();
-                first = resolvedChains[i];
-                vertex = first;
+                int vertCount = 0;
+                int first = resolvedChains[i];
+                vertIdx = first;
                 do
                 {
-                    newChain.Add(vertex);
-
-                    vertex = vertex.nextChainVert;
+                    ref ChainVertex vert = ref chainVertices[vertIdx];
+                    vertIdx = vert.nextChainVert;
+                    vertCount++;
                 }
-                while (!vertex.Equals(first));
+                while (vertIdx != first);
 
-                if (newChain.Count > 2)
+                if (vertCount > 2)
                 {
                     // New valid chain
-                    newChains.Add(newChain);
+                    newChains.Add(first);
                 }
-                else if (newChain.Count == 2)
+                else if (vertCount == 2)
                 {
                     // If we have only two vertices we can collapse the segment and close the polygons
-                    ChainVertex prev = newChain[0], next = newChain[1];
+                    ref ChainVertex prev = ref chainVertices[first];
+                    ref ChainVertex next = ref chainVertices[prev.nextChainVert];
                     ref PolygonVertex prevLhs = ref polygonVertices[prev.lhsPolyVert];
                     ref PolygonVertex nextLhs = ref polygonVertices[next.lhsPolyVert];
                     ref PolygonVertex prevRhs = ref polygonVertices[prev.rhsPolyVert];
@@ -837,21 +866,21 @@ namespace AggroBird.StraightSkeleton
                     }
                 }
             }
-
-            chain.Clear();
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void LinkPolygonVerts(int prev, int vert, int next)
+
+        // Recalculate a node and its neighbours
+        private void RecalculateSegments(ref ChainVertex vert)
         {
-            LinkPolygonVerts(prev, vert);
-            LinkPolygonVerts(vert, next);
-        }
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void LinkPolygonVerts(int prev, int next)
-        {
-            polygonVertices[prev].nextPolyVert = next;
-            polygonVertices[next].prevPolyVert = prev;
+            ref ChainVertex prev = ref chainVertices[vert.prevChainVert];
+            ref ChainVertex next = ref chainVertices[vert.nextChainVert];
+
+            prev.RecalculateSegment(vert.position);
+            vert.RecalculateSegment(next.position);
+
+            prev.RecalculateBisector(chainVertices[prev.prevChainVert].direction);
+            vert.RecalculateBisector(prev.direction);
+            next.RecalculateBisector(vert.direction);
         }
 
 
@@ -872,11 +901,6 @@ namespace AggroBird.StraightSkeleton
             return new float2(x, y);
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static bool IncidentVertices(ChainVertex a, ChainVertex b, float accuracy)
-        {
-            return IncidentVertices(a.position, b.position, accuracy);
-        }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool IncidentVertices(float2 a, float2 b, float accuracy)
         {
@@ -902,13 +926,13 @@ namespace AggroBird.StraightSkeleton
 
         private struct IntersectResult
         {
-            public static readonly IntersectResult None = new IntersectResult { distanceSqr = float.PositiveInfinity };
+            public static readonly IntersectResult None = new IntersectResult { distanceSqr = float.PositiveInfinity, segment = -1 };
 
             public float2 point;
             public float distanceSqr;
-            public ChainVertex segment;
+            public int segment;
 
-            public bool IsIncident => segment == null;
+            public bool IsIncident => segment == -1;
 
             public static implicit operator bool(IntersectResult intersectResult)
             {
@@ -918,54 +942,50 @@ namespace AggroBird.StraightSkeleton
 
         // Calculate the intersection of a vertex on a segment, and if the distance is closer than the previous, update the result.
         // This function prefers incident results, to reduce the amount of tiny segment intersections.
-        private static void AppendIntersect(ChainVertex vertex, ChainVertex segment, float accuracy, ref IntersectResult result)
+        private void AppendIntersect(ref ChainVertex vert, ref ChainVertex segBeg, ref ChainVertex segEnd, float accuracy, ref IntersectResult result)
         {
-            float acc2 = accuracy * accuracy;
-            ChainVertex v2 = segment.nextChainVert;
-            float2 p0 = vertex.position;
-            float2 p1 = segment.position;
-            float2 p2 = v2.position;
+            float accuracySqr = accuracy * accuracy;
 
             // See if we are anywhere near the segment origin
-            float dist = math.distancesq(p0, p1);
-            if (dist <= acc2 && dist < result.distanceSqr)
+            float dist = math.distancesq(vert.position, segBeg.position);
+            if (dist <= accuracySqr && dist < result.distanceSqr)
             {
-                result.point = p1;
+                result.point = segBeg.position;
                 result.distanceSqr = dist;
-                result.segment = null;
+                result.segment = -1;
             }
 
             // See if we are anywhere near the segment end
-            dist = math.distancesq(p0, p2);
-            if (dist <= acc2 && dist < result.distanceSqr)
+            dist = math.distancesq(vert.position, segEnd.position);
+            if (dist <= accuracySqr && dist < result.distanceSqr)
             {
-                result.point = p2;
+                result.point = segEnd.position;
                 result.distanceSqr = dist;
-                result.segment = null;
+                result.segment = -1;
             }
 
             // Project the point onto the segment (if we are currently not incident)
-            if (segment.length > 0 && (!result || !result.IsIncident))
+            if (segBeg.length > 0 && (!result || !result.IsIncident))
             {
                 // Project on the segment along the length
-                float2 relative = vertex.position - segment.position;
-                float project = math.dot(relative, segment.direction);
-                if (project >= 0 && project <= segment.length)
+                float2 relative = vert.position - segBeg.position;
+                float project = math.dot(relative, segBeg.direction);
+                if (project >= 0 && project <= segBeg.length)
                 {
                     // Project on the segment along the width (with an error margin)
-                    float2 perp = new float2(segment.direction.y, -segment.direction.x);
+                    float2 perp = new float2(segBeg.direction.y, -segBeg.direction.x);
                     float dot = math.dot(perp, relative);
                     if (math.abs(dot) <= accuracy)
                     {
                         // The result point will be projected along the segment to ensure 
                         // the result intersection point will not warp the segment
-                        float2 point = segment.position + segment.direction * project;
-                        dist = math.distancesq(vertex.position, point);
+                        float2 point = segBeg.position + segBeg.direction * project;
+                        dist = math.distancesq(vert.position, point);
                         if (dist < result.distanceSqr)
                         {
                             result.point = point;
                             result.distanceSqr = dist;
-                            result.segment = segment;
+                            result.segment = segBeg.index;
                         }
                     }
                 }

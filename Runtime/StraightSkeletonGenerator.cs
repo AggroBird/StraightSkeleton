@@ -680,9 +680,9 @@ namespace AggroBird.StraightSkeleton
                         if (!bestResult.IsIncident)
                         {
                             // Insert new vertex on segment
+                            ref ChainVertex insert = ref AddChainVertex(new ChainVertex { position = bestResult.point, depth = vert.depth, pass = pass });
                             ref ChainVertex segBeg = ref chainVertices[bestResult.segment];
                             ref ChainVertex segEnd = ref chainVertices[segBeg.nextChainVert];
-                            ref ChainVertex insert = ref AddChainVertex(new ChainVertex { position = bestResult.point, depth = segBeg.depth, pass = pass });
                             insert.Link(ref segBeg, ref segEnd);
                             RecalculateSegments(ref insert);
                             // Create an empty polygon vertex at the split position

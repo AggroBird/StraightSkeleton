@@ -147,6 +147,12 @@ namespace AggroBird.StraightSkeleton
                 next.prevPolyVert = index;
                 nextPolyVert = next.index;
             }
+
+
+            public override string ToString()
+            {
+                return $"polygon vertex #{index}";
+            }
         }
 
         private struct ChainVertex

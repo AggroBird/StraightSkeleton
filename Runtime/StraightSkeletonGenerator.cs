@@ -228,58 +228,6 @@ namespace AggroBird.StraightSkeleton
             }
         }
 
-        // Chain of vertices.
-        // Vertices are not guaranteed to be in order, so they are stored as a linked list.
-        /*private class Chain : IEnumerable<ChainVertex>
-        {
-
-            public ChainVertex First => vertices[0];
-            public int Count => vertices.Count;
-            public ChainVertex this[int idx] => vertices[idx];
-            private readonly List<ChainVertex> vertices = new List<ChainVertex>();
-
-            public void Add(ChainVertex vertex)
-            {
-                vertices.Add(vertex);
-            }
-            public void Clear()
-            {
-                vertices.Clear();
-            }
-
-            // Enumerators for the linked lists
-            public IEnumerator<ChainVertex> GetEnumerator()
-            {
-                if (vertices.Count == 0) yield break;
-                var start = First;
-                var current = start;
-                do
-                {
-                    yield return current;
-                    current = current.nextChainVert;
-                }
-                while (!current.Equals(start));
-            }
-            IEnumerator IEnumerable.GetEnumerator()
-            {
-                return GetEnumerator();
-            }
-
-
-
-            public override string ToString()
-            {
-                if (vertices.Count == 0)
-                {
-                    return "empty chain";
-                }
-                else
-                {
-                    return $"chain of {First} ({vertices.Count}) vertices";
-                }
-            }
-        }*/
-
         private static void EnsureCapacity<T>(ref T[] buffer, int size, bool copyData)
         {
             int currentCapacity = buffer.Length;

@@ -482,7 +482,7 @@ namespace AggroBird.StraightSkeleton
                         float angleHalf = angle * 0.5f;
                         float2 bisector = Rotate(a, angleHalf);
                         float velocity = math.sin(angleHalf);
-                        bisectors.Add(bisector * (0.01f / velocity));
+                        bisectors.Add(bisector * (LowPrecisionEpsilon / velocity));
                     }
 
                     // Output polygons

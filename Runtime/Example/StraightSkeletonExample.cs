@@ -14,11 +14,10 @@ namespace AggroBird.StraightSkeleton
         [Min(0)] public float wallHeight = 2;
         public Color wallColor = Color.white;
         [Range(1, 89)] public float roofPitch = 45;
+        [Min(0)] public float maxRoofHeight = 3;
         public Color roofColor = Color.red;
         [Space]
         public bool generateOnValidate = false;
-
-        public float maxHeight = 999;
 
 
         private readonly StraightSkeletonGenerator generator = new StraightSkeletonGenerator();
@@ -62,7 +61,7 @@ namespace AggroBird.StraightSkeleton
                 // Generate straight skeleton
                 try
                 {
-                    generator.Generate(input, straightSkeleton, maxHeight);
+                    generator.Generate(input, straightSkeleton, maxRoofHeight);
                 }
                 catch (Exception ex)
                 {

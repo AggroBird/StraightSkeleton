@@ -427,9 +427,9 @@ MonoBehaviour:
   wallHeight: 2
   wallColor: {r: 0.7075472, g: 0.7075472, b: 0.7075472, a: 1}
   roofPitch: 45
+  maxRoofHeight: 3
   roofColor: {r: 0.6981132, g: 0.121840514, b: 0.121840514, a: 1}
   generateOnValidate: 1
-  maxHeight: 999
 --- !u!4 &439124009364944743
 Transform:
   m_ObjectHideFlags: 0

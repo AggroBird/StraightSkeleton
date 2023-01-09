@@ -856,13 +856,11 @@ namespace AggroBird.StraightSkeleton
                     ref PolygonVertex nextRhs = ref polygonVertices[next.rhsPolyVert];
                     if (prevLhs.nextPolyVert == -1 && nextRhs.prevPolyVert == -1)
                     {
-                        prevLhs.nextPolyVert = next.rhsPolyVert;
-                        nextRhs.prevPolyVert = prev.lhsPolyVert;
+                        prevLhs.LinkNext(ref nextRhs);
                     }
                     if (prevRhs.prevPolyVert == -1 && nextLhs.nextPolyVert == -1)
                     {
-                        prevRhs.prevPolyVert = next.lhsPolyVert;
-                        nextLhs.nextPolyVert = prev.rhsPolyVert;
+                        prevRhs.LinkPrev(ref nextLhs);
                     }
                 }
             }

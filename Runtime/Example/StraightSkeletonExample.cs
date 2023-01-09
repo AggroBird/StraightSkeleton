@@ -249,10 +249,11 @@ namespace AggroBird.StraightSkeleton
 
         private void OnDrawGizmosSelected()
         {
+            float2 scale = new float2(transform.lossyScale.x, transform.lossyScale.z);
             foreach (var line in straightSkeleton.DebugOutput)
             {
                 Gizmos.color = line.color;
-                Vector2 p0 = line.from, p1 = line.to;
+                Vector2 p0 = line.from * scale, p1 = line.to * scale;
                 Gizmos.DrawLine(new Vector3(p0.x, 0, p0.y), new Vector3(p1.x, 0, p1.y));
             }
         }

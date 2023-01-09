@@ -386,7 +386,7 @@ namespace AggroBird.StraightSkeleton
 
                     ApplyShrinkDistance(activeChain, distance);
 
-                    ProcessIntersectionEvents(activeChain, distance, pass);
+                    ProcessIntersectionEvents(activeChain, pass);
                 }
 
                 activeChains.Clear();
@@ -628,7 +628,7 @@ namespace AggroBird.StraightSkeleton
         }
 
         // Check for any intersections (results in one or more new chains)
-        private void ProcessIntersectionEvents(int chain, float distance, int pass)
+        private void ProcessIntersectionEvents(int chain, int pass)
         {
             // This phase scans over all the vertices and checks for overlapping (incident) vertices.
             // In the case of a split event, it will emit a new vertex parallel to the segment so that

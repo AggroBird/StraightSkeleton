@@ -362,7 +362,6 @@ namespace AggroBird.StraightSkeleton
             {
                 int j = (i + 1) % chainVertexCount;
                 output.AddDebugLine(chainVertices[i].position, chainVertices[j].position, Color.white);
-                output.AddDebugLine(chainVertices[i].position, chainVertices[i].position + chainVertices[i].bisector * 0.1f, Color.blue);
             }
 #endif
 
@@ -401,7 +400,6 @@ namespace AggroBird.StraightSkeleton
                         ref ChainVertex vert = ref chainVertices[vertIdx];
                         ref ChainVertex next = ref chainVertices[vert.nextChainVert];
                         output.AddDebugLine(vert.position, next.position, Color.grey);
-                        output.AddDebugLine(vert.position, vert.position + vert.bisector * 0.1f, Color.blue);
                         vertIdx = vert.nextChainVert;
                     }
                     while (vertIdx != chain);

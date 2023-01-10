@@ -1,7 +1,7 @@
 ﻿using UnityEditor;
 using UnityEngine;
 
-namespace AggroBird.StraightSkeleton.Editor
+namespace AggroBird.StraightSkeleton.Example.Editor
 {
     [CustomEditor(typeof(StraightSkeletonExample))]
     public class StraightSkeletonExampleEditor : UnityEditor.Editor

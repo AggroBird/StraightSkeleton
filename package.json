@@ -9,6 +9,13 @@
 	"dependencies": {
 		"com.unity.mathematics": "1.2.6"
 	},
+	"samples": [
+		{
+			"displayName": "Building Example",
+			"description": "Contains building generation sample",
+			"path": "Samples~/BuildingExample"
+		}
+	],
 	"author":
 	{
 		"name": "AggroBirdGK",

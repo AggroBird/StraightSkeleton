@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using Unity.Mathematics;
 using UnityEngine;
 
-namespace AggroBird.StraightSkeleton
+namespace AggroBird.StraightSkeleton.Example
 {
     [ExecuteInEditMode, RequireComponent(typeof(MeshRenderer), typeof(MeshFilter))]
     public class StraightSkeletonExample : MonoBehaviour

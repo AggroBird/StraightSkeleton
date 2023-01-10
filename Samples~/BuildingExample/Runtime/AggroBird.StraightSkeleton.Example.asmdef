@@ -1,0 +1,16 @@
+{
+    "name": "AggroBird.StraightSkeleton.Example",
+    "references": [
+        "GUID:693fe44bc14d2be4ca863bf427de5610",
+        "GUID:d8b63aba1907145bea998dd612889d6b"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

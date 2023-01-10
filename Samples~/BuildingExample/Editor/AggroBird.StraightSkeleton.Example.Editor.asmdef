@@ -1,7 +1,8 @@
 {
-    "name": "AggroBird.StraightSkeleton.Editor",
+    "name": "AggroBird.StraightSkeleton.Example.Editor",
     "references": [
         "GUID:693fe44bc14d2be4ca863bf427de5610",
+        "GUID:ab62eaf2fae07ae499eb0e5027e8d9b2",
         "GUID:d8b63aba1907145bea998dd612889d6b"
     ],
     "includePlatforms": [

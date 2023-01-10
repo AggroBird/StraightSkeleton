@@ -26,6 +26,8 @@ namespace AggroBird.StraightSkeleton
         public int Count { get; private set; }
         // Center polygons will occupy the first slots in the array
         public int CenterPolygonCount { get; internal set; }
+        // Depth of the last polygon (z axis)
+        public float Depth { get; internal set; }
 
         public IReadOnlyList<float3> this[int index] => polygons[index];
 
@@ -45,6 +47,7 @@ namespace AggroBird.StraightSkeleton
         {
             Count = 0;
             CenterPolygonCount = 0;
+            Depth = 0;
 
 #if WITH_DEBUG
             debugOutput.Clear();
@@ -433,6 +436,9 @@ namespace AggroBird.StraightSkeleton
 
                     // Process intersection events
                     ProcessIntersectionEvents(activeChain, pass, maxDepthReached ? abortedChains : splitChains);
+
+                    // Append depth
+                    output.Depth = math.max(currentDepth + distance, output.Depth);
                 }
 
                 activeChains.Clear();

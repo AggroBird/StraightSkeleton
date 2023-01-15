@@ -18,57 +18,48 @@ namespace AggroBird.StraightSkeleton
     }
 
     // xy = coordinate, z = depth
-    public sealed class StraightSkeleton : IReadOnlyList<IReadOnlyList<float3>>
+    public sealed class StraightSkeleton
     {
-        private readonly List<List<float3>> polygons = new List<List<float3>>();
+        private float3[] vertices = new float3[128];
+        private readonly List<Range> polygons = new List<Range>();
+
+        internal void AddVertex(float3 vertex)
+        {
+            if (TotalVertexCount == vertices.Length)
+            {
+                float3[] newBuffer = new float3[vertices.Length << 1];
+                Array.Copy(vertices, newBuffer, vertices.Length);
+                vertices = newBuffer;
+            }
+            vertices[TotalVertexCount++] = vertex;
+        }
+        internal void AddPolygon(Range polygon)
+        {
+            polygons.Add(polygon);
+        }
 
         // Total amount of polygons
-        public int Count { get; private set; }
+        public int TotalPolygonCount => polygons.Count;
         // Center polygons will occupy the first slots in the array
         public int CenterPolygonCount { get; internal set; }
-        // Depth of the last polygon (z axis)
+        // Total depth (z axis)
         public float Depth { get; internal set; }
+        // Total amount of vertices for all polygons
+        public int TotalVertexCount { get; internal set; }
 
-        public IReadOnlyList<float3> this[int index] => polygons[index];
-
-        public IEnumerator<IReadOnlyList<float3>> GetEnumerator()
-        {
-            for (int i = 0; i < Count; i++)
-            {
-                yield return polygons[i];
-            }
-        }
-        IEnumerator IEnumerable.GetEnumerator()
-        {
-            return GetEnumerator();
-        }
+        // Get polygon
+        public ReadOnlySpan<float3> this[int index] => vertices.AsSpan(polygons[index]);
 
         public void Clear()
         {
-            Count = 0;
+            polygons.Clear();
             CenterPolygonCount = 0;
+            TotalVertexCount = 0;
             Depth = 0;
 
 #if WITH_DEBUG
             debugOutput.Clear();
 #endif
-        }
-
-        internal List<float3> GetBuffer()
-        {
-            List<float3> buffer;
-            if (polygons.Count == Count)
-            {
-                buffer = new List<float3>();
-                polygons.Add(buffer);
-                Count++;
-            }
-            else
-            {
-                buffer = polygons[Count++];
-                buffer.Clear();
-            }
-            return buffer;
         }
 
 #if WITH_DEBUG
@@ -323,16 +314,16 @@ namespace AggroBird.StraightSkeleton
 
 
         // Allows reusage of straight skeleton buffer data
-        public void Generate(IReadOnlyList<float2> points, StraightSkeleton output, float maxDepth = float.MaxValue)
+        public void Generate(Span<float2> points, StraightSkeleton output, float maxDepth = float.MaxValue)
         {
             output.Clear();
 
-            if (points == null || points.Count < 3)
+            if (points == null || points.Length < 3)
             {
                 throw new StraightSkeletonException("Invalid input polygon provided");
             }
 
-            int pointCount = points.Count;
+            int pointCount = points.Length;
 
 #if WITH_DEBUG
             for (int i = 0; i < pointCount; i++)
@@ -345,11 +336,11 @@ namespace AggroBird.StraightSkeleton
             // Max depth less than zero yields one single polygon
             if (maxDepth <= 0)
             {
-                List<float3> buffer = output.GetBuffer();
                 for (int i = 0; i < pointCount; i++)
                 {
-                    buffer.Add(new float3(points[i], 0));
+                    output.AddVertex(new float3(points[i], 0));
                 }
+                output.AddPolygon(new Range(0, pointCount));
                 return;
             }
 
@@ -466,8 +457,7 @@ namespace AggroBird.StraightSkeleton
             // Link up aborted chains
             for (int i = 0; i < abortedChains.Count; i++)
             {
-                List<float3> buffer = output.GetBuffer();
-                output.CenterPolygonCount++;
+                int currentVertexCount = output.TotalVertexCount;
                 int aborted = abortedChains[i];
                 int vertIdx = aborted;
                 do
@@ -482,9 +472,11 @@ namespace AggroBird.StraightSkeleton
                     rhs.LinkNext(ref polygonVertices[prev.lhsPolyVert]);
                     lhs.LinkNext(ref rhs);
                     vertIdx = next.index;
-                    buffer.Add(new float3(prev.position, prev.depth));
+                    output.AddVertex(new float3(prev.position, prev.depth));
                 }
                 while (vertIdx != aborted);
+                output.AddPolygon(new Range(currentVertexCount, output.TotalVertexCount));
+                output.CenterPolygonCount++;
             }
 
 #if WITH_DEBUG
@@ -585,19 +577,20 @@ namespace AggroBird.StraightSkeleton
             // Output result
             for (int i = 0; i < pointCount; i++)
             {
-                List<float3> buffer = output.GetBuffer();
+                int currentVertexCount = output.TotalVertexCount;
                 int first = i * 2;
                 int index = first;
                 do
                 {
                     ref PolygonVertex vertex = ref polygonVertices[index];
-                    buffer.Add(new float3(vertex.position, vertex.depth));
+                    output.AddVertex(new float3(vertex.position, vertex.depth));
                     index = vertex.nextPolyVert;
                 }
                 while (index != first);
+                output.AddPolygon(new Range(currentVertexCount, output.TotalVertexCount));
             }
         }
-        public StraightSkeleton Generate(IReadOnlyList<float2> points, float maxDepth = float.MaxValue)
+        public StraightSkeleton Generate(Span<float2> points, float maxDepth = float.MaxValue)
         {
             StraightSkeleton output = new StraightSkeleton();
             Generate(points, output, maxDepth);

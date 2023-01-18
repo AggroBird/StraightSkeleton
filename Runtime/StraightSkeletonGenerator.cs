@@ -17,7 +17,7 @@ namespace AggroBird.StraightSkeleton
     }
 
     // xy = coordinate, z = depth
-    public sealed class StraightSkeleton
+    public sealed class StraightSkeletonOutput
     {
         private float3[] vertices = new float3[128];
         private readonly List<Range> polygons = new List<Range>();
@@ -313,7 +313,7 @@ namespace AggroBird.StraightSkeleton
 
 
         // Allows reusage of straight skeleton buffer data
-        public void Generate(ReadOnlySpan<float2> points, StraightSkeleton output, float maxDepth = float.MaxValue)
+        public void Generate(ReadOnlySpan<float2> points, StraightSkeletonOutput output, float maxDepth = float.MaxValue)
         {
             output.Clear();
 
@@ -589,9 +589,9 @@ namespace AggroBird.StraightSkeleton
                 output.AddPolygon(new Range(currentVertexCount, output.TotalVertexCount));
             }
         }
-        public StraightSkeleton Generate(ReadOnlySpan<float2> points, float maxDepth = float.MaxValue)
+        public StraightSkeletonOutput Generate(ReadOnlySpan<float2> points, float maxDepth = float.MaxValue)
         {
-            StraightSkeleton output = new StraightSkeleton();
+            StraightSkeletonOutput output = new StraightSkeletonOutput();
             Generate(points, output, maxDepth);
             return output;
         }
